@@ -27,6 +27,7 @@ import VerifyEmailNotice from "./pages/VerifyEmailNotice";
 import MyPage from "./pages/MyPage";
 import Profile from "./pages/Profile";
 import StudentReservations from "./pages/student/StudentReservations";
+import ReferralPage from "./pages/student/ReferralPage";
 import ProtectedRoute from "./ProtectedRoute";
 
 // 予約フォームと講師・管理画面はバンドルが大きく、初期表示では不要なため遅延読み込みする
@@ -111,6 +112,15 @@ function App() {
             element={
               <ProtectedRoute>
                 <Profile />
+              </ProtectedRoute>
+            }
+          />
+          {/* 友達紹介（紹介コードの確認・実績・獲得クーポン） */}
+          <Route
+            path="/referral"
+            element={
+              <ProtectedRoute>
+                <ReferralPage />
               </ProtectedRoute>
             }
           />

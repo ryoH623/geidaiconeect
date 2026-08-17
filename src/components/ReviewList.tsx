@@ -29,6 +29,9 @@ type Review = {
   createdAt?: { seconds: number };
   timestamp?: { seconds: number };
   reply?: string;
+  /** 投稿キャンペーンの対象として投稿されたレビューにのみ入る。
+   *  通常投稿・キャンペーン開始前のレビューには存在しない。 */
+  campaign?: string | null;
 };
 
 // createdAt（新）/ timestamp（旧）のどちらかから投稿時刻を取り出す
@@ -173,6 +176,24 @@ export default function ReviewList({ teacherId, teacherAuthUid }: Props) {
                     {"☆".repeat(5 - r.rating)}
                   </strong>
                   <p>{r.comment}</p>
+                  {/* 対価（クーポン）を伴う投稿であることの明示。
+                      campaign を持たない過去のレビュー・通常のレビューには出さない。 */}
+                  {r.campaign && (
+                    <p
+                      className="review-campaign-note"
+                      style={{
+                        fontSize: '0.8rem',
+                        color: '#777',
+                        background: '#f7f7f7',
+                        borderRadius: 4,
+                        padding: '6px 8px',
+                        margin: '4px 0 8px',
+                      }}
+                    >
+                      このレビューは、投稿キャンペーンの対象として投稿されました。
+                      評価・内容は投稿者本人の自由な意見です。
+                    </p>
+                  )}
                   {reviewSeconds(r) > 0 && (
                     <small>
                       投稿日:{" "}

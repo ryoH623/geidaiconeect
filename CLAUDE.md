@@ -43,16 +43,25 @@ firebase deploy --only functions   # デプロイ（predeploy で lint と build
 3. `stripeWebhook`（onRequest）が決済完了を受けて予約ステータスを更新。成功ページは `getReservationForSuccess`（onRequest）で予約情報を取得。
 4. ルーティング上、`/reserve` と `/reservation` は両方 ReservationForm を指す（Stripe の cancel_url 互換のため両方残すこと）。
 
-### Cloud Functions（functions/src/index.ts、単一ファイル）
+### キャンペーン（クーポン・友達紹介）
+
+- 実装は [functions/src/campaigns.ts](functions/src/campaigns.ts) に集約。index.ts は再エクスポートのみ（campaigns.ts から index.ts を import しないこと。循環参照になる）。
+- クーポンの状態は `available` / `reserved` / `used` / `expired` / `cancelled`。Checkout 作成で reserved、決済完了 webhook で used、期限切れ・失敗で available に戻す。
+- 値引き額はフロントから受け取らない。クライアントが送るのは `couponId` だけで、金額はサーバーが再計算する（`judgeCoupon`）。
+- 付与の重複防止は `couponGrants/{決め打ちID}`。レビューを削除して再投稿しても再付与されない。
+- レビューの作成は `submitReview`（callable）経由のみ。`firestore.rules` で reviews の create は禁止。
+- 仕様と運用手順は [docs/campaigns.md](docs/campaigns.md)。
+
+### Cloud Functions（functions/src/index.ts ＋ campaigns.ts）
 
 - firebase-functions **v1 API**（`firebase-functions/v1`）を使用。リージョンは `us-central1`（フロントの `getFunctions(app, "us-central1")` と一致させること）。
 - 環境変数は `defineString()` パラメータで定義: SMTP_*, APP_URL, STRIPE_SECRET_KEY, STRIPE_SUCCESS_URL, STRIPE_CANCEL_URL, STRIPE_WEBHOOK_SECRET。
-- エクスポート（onCall/onRequest）: `sendVerifyEmail`, `resendVerifyEmail`, `createCheckoutSession`, `getAvailableStudios`, `createReservationAndCheckout`, `getReservationForSuccess`, `stripeWebhook`, `cancelReservation`, `submitContact`, `submitRequest`, `submitTeacherApplication`, `studioAdminHttp`。
-- スケジュール実行（pubsub）: `sendLessonReminders`（レッスン前リマインド）, `releaseExpiredHolds`（期限切れ pending の枠解放）, `captureDueAuthorizations`（締切を過ぎたカード与信のキャプチャ）。
+- エクスポート（onCall/onRequest）: `sendVerifyEmail`, `resendVerifyEmail`, `createCheckoutSession`, `getAvailableStudios`, `createReservationAndCheckout`, `getReservationForSuccess`, `stripeWebhook`, `cancelReservation`, `rescheduleReservation`, `setMeetingUrl`, `submitContact`, `submitRequest`, `submitTeacherApplication`, `studioAdminHttp`, `submitReview`, `getMyReferralCode`, `checkReferralCode`, `applyReferralCode`。
+- スケジュール実行（pubsub）: `sendLessonReminders`（レッスン前リマインド）, `releaseExpiredHolds`（期限切れ pending の枠解放）, `captureDueAuthorizations`（締切を過ぎたカード与信のキャプチャ）, `finalizeCompletedLessons`（レッスン完了の確定と紹介特典の判定）, `expireCoupons`（期限切れクーポンの整理）。
 
 ### Firestore
 
-主なコレクション: `users`（本人のみ read/write）, `reservations`（削除禁止）, `reviews`, `schedules`（read は公開）。ルールは [firestore.rules](firestore.rules)。
+主なコレクション: `users`（本人のみ read/write）, `reservations`（削除禁止）, `reviews`（作成は Functions のみ）, `schedules`（read は公開）, `coupons`（本人のみ read）, `couponGrants` / `referralCodes`（admin のみ read）, `referrals`（紹介者・被紹介者が read）。ルールは [firestore.rules](firestore.rules)。
 
 ### フロントエンド構成
 
@@ -64,4 +73,5 @@ firebase deploy --only functions   # デプロイ（predeploy で lint と build
 ### 注意点
 
 - `bk_Login.tsx`, `bk_index.css`, `*.bak` はバックアップファイル。編集・参照しない。
+- Firestore のクエリは等価条件のみで組む（範囲条件を混ぜると複合インデックスが必要になり、firestore.indexes.json を管理していないため）。日付の絞り込みは取得後にメモリ上で行う。
 - フロントは ESM（`"type": "module"`）、functions は CommonJS（`"type": "commonjs"`、Node 22）。

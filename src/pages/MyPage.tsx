@@ -3,6 +3,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import ReferralCodeCard from "../components/ReferralCodeCard";
 
 const MyPage: React.FC = () => {
   const { user } = useAuth();
@@ -50,7 +51,17 @@ const MyPage: React.FC = () => {
           >
             レビューを投稿する
           </Link>
+
+          <Link
+            to="/referral"
+            className="form-button"
+            style={{ textAlign: "center" }}
+          >
+            友達紹介・クーポン
+          </Link>
         </div>
+
+        <ReferralCodeCard heading="あなたの紹介コード" />
       </div>
     </main>
   );
