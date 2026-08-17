@@ -6,7 +6,9 @@ import { useAuth } from "../contexts/AuthContext";
 import ReferralCodeCard from "../components/ReferralCodeCard";
 
 const MyPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
+  // 友達紹介・クーポンは生徒アカウント向けの機能
+  const isStudent = role === "student";
 
   return (
     <main className="about-section fade-in-up">
@@ -52,16 +54,18 @@ const MyPage: React.FC = () => {
             レビューを投稿する
           </Link>
 
-          <Link
-            to="/referral"
-            className="form-button"
-            style={{ textAlign: "center" }}
-          >
-            友達紹介・クーポン
-          </Link>
+          {isStudent && (
+            <Link
+              to="/referral"
+              className="form-button"
+              style={{ textAlign: "center" }}
+            >
+              友達紹介・クーポン
+            </Link>
+          )}
         </div>
 
-        <ReferralCodeCard heading="あなたの紹介コード" />
+        {isStudent && <ReferralCodeCard heading="あなたの紹介コード" />}
       </div>
     </main>
   );

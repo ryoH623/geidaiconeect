@@ -12,13 +12,16 @@ type Props = {
 };
 
 export default function ReferralCodeCard({ heading }: Props) {
-  const { user, loading: authLoading } = useAuth();
+  const { user, role, loading: authLoading } = useAuth();
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
 
+  // 紹介コードは生徒アカウントのみ。管理者・講師では呼んでも 403 になるので呼ばない
+  const isStudent = role === 'student';
+
   useEffect(() => {
-    if (authLoading || !user) return;
+    if (authLoading || !user || !isStudent) return;
 
     let cancelled = false;
     (async () => {
@@ -40,7 +43,7 @@ export default function ReferralCodeCard({ heading }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [user, authLoading]);
+  }, [user, authLoading, isStudent]);
 
   const handleCopy = async () => {
     if (!code) return;
@@ -55,6 +58,20 @@ export default function ReferralCodeCard({ heading }: Props) {
   };
 
   if (!user) return null;
+
+  // ロール判定が済むまでは何も出さない（一瞬「対象外」が見えるのを防ぐ）
+  if (authLoading) return null;
+
+  if (!isStudent) {
+    return (
+      <section style={{ marginTop: '2rem' }}>
+        {heading && <h3>{heading}</h3>}
+        <p style={{ color: '#666', marginTop: '0.75rem' }}>
+          友達紹介は生徒アカウントでご利用いただけます。
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section style={{ marginTop: '2rem' }}>

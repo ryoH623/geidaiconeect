@@ -25,14 +25,17 @@ type Referral = {
 const REFERRER_REWARD_LESSON_COUNT = 3;
 
 export default function ReferralPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, role, loading: authLoading } = useAuth();
   const { coupons } = useMyCoupons();
+
+  // 友達紹介は生徒アカウント限定（functions 側も student 以外は弾く）
+  const isStudent = role === 'student';
 
   const [referrals, setReferrals] = useState<Referral[]>([]);
 
   // 自分が紹介した相手の進捗
   useEffect(() => {
-    if (!user) {
+    if (!user || !isStudent) {
       setReferrals([]);
       return;
     }
@@ -50,7 +53,7 @@ export default function ReferralPage() {
       (err) => console.error('紹介状況の取得に失敗しました', err)
     );
     return () => unsubscribe();
-  }, [user]);
+  }, [user, isStudent]);
 
   const stats = useMemo(() => {
     const invited = referrals.length;
@@ -82,6 +85,19 @@ export default function ReferralPage() {
       <main className="about-section fade-in-up">
         <p style={{ textAlign: 'center', marginTop: '2rem' }}>
           友達紹介のご利用にはログインが必要です。
+        </p>
+      </main>
+    );
+  }
+
+  if (!isStudent) {
+    return (
+      <main className="about-section fade-in-up">
+        <h2 className="centered-heading-with-border">
+          <span>友達紹介</span>
+        </h2>
+        <p style={{ textAlign: 'center', marginTop: '2rem' }}>
+          友達紹介・クーポンは生徒アカウントでご利用いただけます。
         </p>
       </main>
     );
