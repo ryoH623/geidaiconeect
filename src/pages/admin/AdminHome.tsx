@@ -76,6 +76,22 @@ const AdminHome: React.FC = () => {
           </Link>
 
           <Link
+            to="/admin/coupons"
+            className="form-button"
+            style={{ textAlign: "center" }}
+          >
+            クーポン管理（発行・無効化）
+          </Link>
+
+          <Link
+            to="/admin/referrals"
+            className="form-button"
+            style={{ textAlign: "center" }}
+          >
+            友達紹介 管理
+          </Link>
+
+          <Link
             to="/admin/contacts"
             className="form-button"
             style={{ textAlign: "center" }}

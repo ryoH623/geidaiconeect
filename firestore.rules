@@ -156,6 +156,13 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // 運営の手動操作（クーポンの発行・無効化、紹介の無効化）の監査ログ。
+    // 誰がいつ何をなぜ行ったかの記録なので、書き込みは Cloud Functions のみ。
+    match /campaignAuditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
     // 紹介コード → uid の逆引き。総当たりで他人を特定されないよう read は admin のみ。
     // 照合は Cloud Functions（checkReferralCode / applyReferralCode）が行う。
     match /referralCodes/{code} {

@@ -30,6 +30,9 @@ export {
   applyReferralCode,
   finalizeCompletedLessons,
   expireCoupons,
+  adminIssueCoupon,
+  adminCancelCoupon,
+  adminSetReferralBlocked,
 } from "./campaigns";
 
 // ========================================

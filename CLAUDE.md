@@ -50,13 +50,14 @@ firebase deploy --only functions   # デプロイ（predeploy で lint と build
 - 値引き額はフロントから受け取らない。クライアントが送るのは `couponId` だけで、金額はサーバーが再計算する（`judgeCoupon`）。
 - 付与の重複防止は `couponGrants/{決め打ちID}`。レビューを削除して再投稿しても再付与されない。
 - レビューの作成は `submitReview`（callable）経由のみ。`firestore.rules` で reviews の create は禁止。
+- 管理画面: `/admin/coupons`（一覧・手動付与・無効化）、`/admin/referrals`（一覧・無効化）、`/admin/users/:uid/campaigns`（ユーザー別履歴）。運営の手動操作は理由の入力が必須で、`campaignAuditLogs` に記録が残る。
 - 仕様と運用手順は [docs/campaigns.md](docs/campaigns.md)。
 
 ### Cloud Functions（functions/src/index.ts ＋ campaigns.ts）
 
 - firebase-functions **v1 API**（`firebase-functions/v1`）を使用。リージョンは `us-central1`（フロントの `getFunctions(app, "us-central1")` と一致させること）。
 - 環境変数は `defineString()` パラメータで定義: SMTP_*, APP_URL, STRIPE_SECRET_KEY, STRIPE_SUCCESS_URL, STRIPE_CANCEL_URL, STRIPE_WEBHOOK_SECRET。
-- エクスポート（onCall/onRequest）: `sendVerifyEmail`, `resendVerifyEmail`, `createCheckoutSession`, `getAvailableStudios`, `createReservationAndCheckout`, `getReservationForSuccess`, `stripeWebhook`, `cancelReservation`, `rescheduleReservation`, `setMeetingUrl`, `submitContact`, `submitRequest`, `submitTeacherApplication`, `studioAdminHttp`, `submitReview`, `getMyReferralCode`, `checkReferralCode`, `applyReferralCode`。
+- エクスポート（onCall/onRequest）: `sendVerifyEmail`, `resendVerifyEmail`, `createCheckoutSession`, `getAvailableStudios`, `createReservationAndCheckout`, `getReservationForSuccess`, `stripeWebhook`, `cancelReservation`, `rescheduleReservation`, `setMeetingUrl`, `submitContact`, `submitRequest`, `submitTeacherApplication`, `studioAdminHttp`, `submitReview`, `getMyReferralCode`, `checkReferralCode`, `applyReferralCode`, `adminIssueCoupon`, `adminCancelCoupon`, `adminSetReferralBlocked`。
 - スケジュール実行（pubsub）: `sendLessonReminders`（レッスン前リマインド）, `releaseExpiredHolds`（期限切れ pending の枠解放）, `captureDueAuthorizations`（締切を過ぎたカード与信のキャプチャ）, `finalizeCompletedLessons`（レッスン完了の確定と紹介特典の判定）, `expireCoupons`（期限切れクーポンの整理）。
 
 ### Firestore

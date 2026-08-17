@@ -46,6 +46,11 @@ const AdminTeacherDetail = lazy(() => import("./pages/admin/AdminTeacherDetail")
 const AdminReservations = lazy(() => import("./pages/admin/AdminReservations"));
 const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
 const AdminReviews = lazy(() => import("./pages/admin/AdminReviews"));
+const AdminCoupons = lazy(() => import("./pages/admin/AdminCoupons"));
+const AdminReferrals = lazy(() => import("./pages/admin/AdminReferrals"));
+const AdminUserCampaigns = lazy(
+  () => import("./pages/admin/AdminUserCampaigns")
+);
 const AdminContacts = lazy(() => import("./pages/admin/AdminContacts"));
 const AdminRequests = lazy(() => import("./pages/admin/AdminRequests"));
 const TestCheckoutPage = lazy(() => import("./pages/TestCheckoutPage"));
@@ -221,6 +226,31 @@ function App() {
             element={
               <RequireAdmin>
                 <AdminReviews />
+              </RequireAdmin>
+            }
+          />
+          {/* キャンペーン（クーポン・友達紹介）の管理 */}
+          <Route
+            path="/admin/coupons"
+            element={
+              <RequireAdmin>
+                <AdminCoupons />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/admin/referrals"
+            element={
+              <RequireAdmin>
+                <AdminReferrals />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/admin/users/:uid/campaigns"
+            element={
+              <RequireAdmin>
+                <AdminUserCampaigns />
               </RequireAdmin>
             }
           />

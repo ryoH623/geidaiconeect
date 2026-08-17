@@ -35,7 +35,12 @@ export type CouponStatus =
   | "expired"
   | "cancelled";
 
-export type CouponType = "review" | "referral_referee" | "referral_referrer";
+export type CouponType =
+  | "review"
+  | "referral_referee"
+  | "referral_referrer"
+  /** 運営が個別対応で手動付与したもの（キャンペーンの例外対応・お詫び等） */
+  | "manual";
 
 export type CouponSpec = {
   name: string;
@@ -50,6 +55,14 @@ export type CouponSpec = {
 };
 
 export const COUPON_SPECS: Record<CouponType, CouponSpec> = {
+  manual: {
+    name: "運営付与クーポン",
+    discountAmount: 500,
+    minAmount: 4000,
+    validDays: 60,
+    terms:
+      "レッスン料 4,000円以上のご予約で利用できます。1回限り・他のクーポンとの併用不可。",
+  },
   review: {
     name: "レビュー投稿クーポン",
     discountAmount: 500,
@@ -893,6 +906,279 @@ export const finalizeCompletedLessons = pubsub
       users: affectedUserIds.size,
     });
   });
+
+// ========================================
+// 管理者向け操作
+//
+// クーポン・紹介のドキュメントは Firestore ルールで write を全面的に閉じているため、
+// 運営の手動対応もすべてここを通す。誰がいつ何をなぜ行ったかを
+// campaignAuditLogs に必ず残す（不正利用の判断根拠を後から追えるようにするため）。
+// ========================================
+
+async function requireAdmin(
+  context: { auth?: { uid: string } | null }
+): Promise<string> {
+  if (!context.auth) {
+    throw new https.HttpsError("unauthenticated", "ログインが必要です。");
+  }
+  const uid = context.auth.uid;
+  const snap = await admin.firestore().collection("users").doc(uid).get();
+  if (!snap.exists || String(snap.data()?.role || "") !== "admin") {
+    throw new https.HttpsError("permission-denied", "管理者権限が必要です。");
+  }
+  return uid;
+}
+
+/** 監査ログ。運営の手動操作は必ずここに1件残す */
+function writeAuditLogInTx(
+  tx: FirebaseFirestore.Transaction,
+  entry: {
+    action: string;
+    adminUid: string;
+    reason: string;
+    targetUserId?: string;
+    couponId?: string;
+    refereeUid?: string;
+    detail?: Record<string, unknown>;
+  }
+): void {
+  const ref = admin.firestore().collection("campaignAuditLogs").doc();
+  tx.set(ref, {
+    ...entry,
+    targetUserId: entry.targetUserId ?? null,
+    couponId: entry.couponId ?? null,
+    refereeUid: entry.refereeUid ?? null,
+    detail: entry.detail ?? null,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+// ========================================
+// Callable(admin): クーポンの手動付与
+//
+// キャンペーンの重複防止台帳（couponGrants）は通さない。
+// 運営が意図して出すものなので、1ユーザー1回の制限には縛られない。
+// ========================================
+export const adminIssueCoupon = https.onCall(
+  async (
+    data: {
+      userId?: string;
+      type?: CouponType;
+      reason?: string;
+      discountAmount?: number;
+      minAmount?: number;
+      validDays?: number;
+    },
+    context
+  ): Promise<{ ok: boolean; couponId: string }> => {
+    const adminUid = await requireAdmin(context);
+
+    const userId = typeof data?.userId === "string" ? data.userId.trim() : "";
+    const reason = typeof data?.reason === "string" ? data.reason.trim() : "";
+    const type: CouponType =
+      data?.type && data.type in COUPON_SPECS ? data.type : "manual";
+
+    if (!userId) {
+      throw new https.HttpsError("invalid-argument", "対象ユーザーを指定してください。");
+    }
+    if (!reason) {
+      throw new https.HttpsError("invalid-argument", "発行理由を入力してください。");
+    }
+
+    const spec = COUPON_SPECS[type];
+    const discountAmount =
+      Number.isInteger(data?.discountAmount) && (data!.discountAmount as number) > 0
+        ? (data!.discountAmount as number)
+        : spec.discountAmount;
+    const minAmount =
+      Number.isInteger(data?.minAmount) && (data!.minAmount as number) >= 0
+        ? (data!.minAmount as number)
+        : spec.minAmount;
+    const validDays =
+      Number.isInteger(data?.validDays) && (data!.validDays as number) > 0
+        ? (data!.validDays as number)
+        : spec.validDays;
+
+    if (minAmount - discountAmount < MIN_PAYABLE_AMOUNT) {
+      throw new https.HttpsError(
+        "invalid-argument",
+        "最低利用金額が値引き額に近すぎます（値引き後が50円以上になる設定にしてください）。"
+      );
+    }
+
+    const userSnap = await admin.firestore().collection("users").doc(userId).get();
+    if (!userSnap.exists) {
+      throw new https.HttpsError("not-found", "対象のユーザーが見つかりません。");
+    }
+
+    const ref = couponsCollection().doc();
+    await admin.firestore().runTransaction(async (tx) => {
+      tx.set(ref, {
+        couponId: ref.id,
+        userId,
+        type,
+        name: spec.name,
+        discountAmount,
+        minAmount,
+        terms: spec.terms,
+        combinable: false,
+        status: "available" as CouponStatus,
+        issuedAt: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: expiresAtFromNow(validDays),
+        reservedReservationId: null,
+        usedReservationId: null,
+        usedAt: null,
+        source: {
+          campaign: "manual",
+          issuedByAdminUid: adminUid,
+          reason,
+        },
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      writeAuditLogInTx(tx, {
+        action: "coupon_issued",
+        adminUid,
+        reason,
+        targetUserId: userId,
+        couponId: ref.id,
+        detail: { type, discountAmount, minAmount, validDays },
+      });
+    });
+
+    logger.info("adminIssueCoupon done", { adminUid, userId, couponId: ref.id });
+    return { ok: true, couponId: ref.id };
+  }
+);
+
+// ========================================
+// Callable(admin): クーポンの無効化
+//
+// 使用済み（used）のものも無効化できるようにしている。不正利用が後から
+// 判明した場合に、記録上「無効」であることを残せるようにするため。
+// ========================================
+export const adminCancelCoupon = https.onCall(
+  async (
+    data: { couponId?: string; reason?: string },
+    context
+  ): Promise<{ ok: boolean }> => {
+    const adminUid = await requireAdmin(context);
+
+    const couponId =
+      typeof data?.couponId === "string" ? data.couponId.trim() : "";
+    const reason = typeof data?.reason === "string" ? data.reason.trim() : "";
+
+    if (!couponId) {
+      throw new https.HttpsError("invalid-argument", "クーポンを指定してください。");
+    }
+    if (!reason) {
+      throw new https.HttpsError("invalid-argument", "無効化の理由を入力してください。");
+    }
+
+    const ref = couponsCollection().doc(couponId);
+    await admin.firestore().runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) {
+        throw new https.HttpsError("not-found", "クーポンが見つかりません。");
+      }
+      const d = snap.data() || {};
+      if (d.status === "cancelled") {
+        throw new https.HttpsError("failed-precondition", "すでに無効化されています。");
+      }
+
+      tx.set(
+        ref,
+        {
+          status: "cancelled" as CouponStatus,
+          cancelledByAdminUid: adminUid,
+          cancelReason: reason,
+          cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+          // 無効化の直前がどの状態だったかを残す（誤操作の切り戻し判断に使う）
+          statusBeforeCancel: d.status ?? null,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      writeAuditLogInTx(tx, {
+        action: "coupon_cancelled",
+        adminUid,
+        reason,
+        targetUserId: typeof d.userId === "string" ? d.userId : undefined,
+        couponId,
+        detail: { statusBeforeCancel: d.status ?? null },
+      });
+    });
+
+    logger.info("adminCancelCoupon done", { adminUid, couponId });
+    return { ok: true };
+  }
+);
+
+// ========================================
+// Callable(admin): 紹介の無効化・解除
+//
+// blocked を立てると、以降のマイルストーン判定が止まる（付与済みの
+// クーポンは取り消されないため、必要なら adminCancelCoupon も併せて行う）。
+// ========================================
+export const adminSetReferralBlocked = https.onCall(
+  async (
+    data: { refereeUid?: string; blocked?: boolean; reason?: string },
+    context
+  ): Promise<{ ok: boolean }> => {
+    const adminUid = await requireAdmin(context);
+
+    const refereeUid =
+      typeof data?.refereeUid === "string" ? data.refereeUid.trim() : "";
+    const blocked = data?.blocked === true;
+    const reason = typeof data?.reason === "string" ? data.reason.trim() : "";
+
+    if (!refereeUid) {
+      throw new https.HttpsError("invalid-argument", "対象の紹介を指定してください。");
+    }
+    if (!reason) {
+      throw new https.HttpsError("invalid-argument", "理由を入力してください。");
+    }
+
+    const ref = referralRef(refereeUid);
+    await admin.firestore().runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) {
+        throw new https.HttpsError("not-found", "紹介の記録が見つかりません。");
+      }
+
+      tx.set(
+        ref,
+        {
+          blocked,
+          blockedReason: blocked ? reason : null,
+          blockedByAdminUid: blocked ? adminUid : null,
+          blockedAt: blocked
+            ? admin.firestore.FieldValue.serverTimestamp()
+            : null,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      writeAuditLogInTx(tx, {
+        action: blocked ? "referral_blocked" : "referral_unblocked",
+        adminUid,
+        reason,
+        targetUserId: refereeUid,
+        refereeUid,
+      });
+    });
+
+    // 解除したときは、止まっていたマイルストーンをその場で判定し直す
+    if (!blocked) {
+      await processReferralMilestones(refereeUid);
+    }
+
+    logger.info("adminSetReferralBlocked done", { adminUid, refereeUid, blocked });
+    return { ok: true };
+  }
+);
 
 // ========================================
 // Scheduled: 期限切れクーポンの整理

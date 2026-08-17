@@ -12,7 +12,12 @@ export type CouponStatus =
   | 'expired'
   | 'cancelled';
 
-export type CouponType = 'review' | 'referral_referee' | 'referral_referrer';
+export type CouponType =
+  | 'review'
+  | 'referral_referee'
+  | 'referral_referrer'
+  /** 運営が個別対応で手動付与したもの（functions/src/campaigns.ts と揃えること） */
+  | 'manual';
 
 export type Coupon = {
   id: string;
