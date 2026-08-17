@@ -16,6 +16,38 @@ export const REFERRAL_CAMPAIGN_ID = "referral-2026";
 /** 紹介者への特典が発生する、被紹介者の完了レッスン数 */
 export const REFERRER_REWARD_LESSON_COUNT = 3;
 
+/**
+ * キャンペーンの実施期間（JST の YYYY-MM-DD、両端を含む）。
+ * null は「制限なし」。終了日を入れるとその翌日から新規の付与が止まる。
+ *
+ * 判定のタイミングが campaign ごとに違う点に注意:
+ *  - レビュー: **投稿日**が期間内であること
+ *  - 友達紹介: **紹介コードの登録日**が期間内であること
+ *    （期間中に案内した特典は、3回目の受講が期間終了後になっても付与する。
+ *     途中まで進めた人の期待を裏切らないため）
+ */
+export type CampaignPeriod = { startsOn: string | null; endsOn: string | null };
+
+export const REVIEW_CAMPAIGN_PERIOD: CampaignPeriod = {
+  startsOn: null,
+  endsOn: null,
+};
+
+export const REFERRAL_CAMPAIGN_PERIOD: CampaignPeriod = {
+  startsOn: null,
+  endsOn: null,
+};
+
+/** 指定日（JST の YYYY-MM-DD）がキャンペーン期間内か */
+export function isWithinCampaign(
+  period: CampaignPeriod,
+  date: string
+): boolean {
+  if (period.startsOn && date < period.startsOn) return false;
+  if (period.endsOn && date > period.endsOn) return false;
+  return true;
+}
+
 // ========================================
 // クーポンの仕様
 // ========================================
@@ -411,6 +443,33 @@ export function todayJstDate(offsetDays = 0): string {
   return jst.toISOString().slice(0, 10);
 }
 
+/** Date を JST の YYYY-MM-DD にする */
+export function jstDateStringOf(d: Date): string {
+  const jst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  return jst.toISOString().slice(0, 10);
+}
+
+/**
+ * 完了したレッスンの回数。
+ *
+ * `lessonCompleted` フラグではなく予約の実体から数える。フラグは日次ジョブが
+ * 立てるもので、この機能より前に作られた予約には存在しないため、
+ * フラグで数えると過去の受講実績がある紹介者が「未受講」と判定されてしまう。
+ * フラグはジョブの処理対象を絞るためだけに使う。
+ */
+export async function countCompletedLessons(uid: string): Promise<number> {
+  if (!uid) return 0;
+  // 等価条件のみで取得し、レッスン日の判定はメモリ上で行う（複合インデックス不要）
+  const snap = await admin
+    .firestore()
+    .collection("reservations")
+    .where("userId", "==", uid)
+    .where("paymentStatus", "==", "paid")
+    .get();
+  const today = todayJstDate();
+  return snap.docs.filter((d) => isLessonCompleted(d.data() || {}, today)).length;
+}
+
 /**
  * 「レッスンが正常に完了した」とみなせるか。
  * 予約に completed という状態は持たせず、支払い確定済み・キャンセルされていない・
@@ -618,6 +677,13 @@ export const applyReferralCode = https.onCall(
       );
     }
 
+    if (!isWithinCampaign(REFERRAL_CAMPAIGN_PERIOD, todayJstDate())) {
+      throw new https.HttpsError(
+        "failed-precondition",
+        "友達紹介キャンペーンは現在実施しておりません。"
+      );
+    }
+
     const db = admin.firestore();
 
     const [userSnap, codeSnap] = await Promise.all([
@@ -758,13 +824,18 @@ export async function processReferralMilestones(
   const referrerUid = String(referral.referrerUid || "");
   if (!referrerUid || referrerUid === refereeUid) return;
 
-  // キャンセル・返金された予約は lessonCompleted が立たないため回数に入らない
-  const completedSnap = await db
-    .collection("reservations")
-    .where("userId", "==", refereeUid)
-    .where("lessonCompleted", "==", true)
-    .get();
-  const completedCount = completedSnap.size;
+  // キャンペーン期間外に登録された紹介は対象外。
+  // 判定に使うのは「登録日」であって今日ではない。期間中に案内した特典は、
+  // 3回目の受講が期間終了後になっても約束どおり付与する。
+  const createdAt = referral.createdAt;
+  const registeredOn =
+    createdAt instanceof admin.firestore.Timestamp
+      ? jstDateStringOf(createdAt.toDate())
+      : todayJstDate();
+  if (!isWithinCampaign(REFERRAL_CAMPAIGN_PERIOD, registeredOn)) return;
+
+  // キャンセル・返金された予約は完了扱いにならないため回数に入らない
+  const completedCount = await countCompletedLessons(refereeUid);
 
   const refereeGrantRef = couponGrantRef(grantKeys.referralReferee(refereeUid));
   const referrerGrantRef = couponGrantRef(grantKeys.referralReferrer(refereeUid));
@@ -772,13 +843,7 @@ export async function processReferralMilestones(
   // 紹介者側の条件: 紹介者自身が過去に1回以上レッスンを完了していること
   let referrerHasCompletedLesson = false;
   if (completedCount >= REFERRER_REWARD_LESSON_COUNT) {
-    const referrerCompleted = await db
-      .collection("reservations")
-      .where("userId", "==", referrerUid)
-      .where("lessonCompleted", "==", true)
-      .limit(1)
-      .get();
-    referrerHasCompletedLesson = !referrerCompleted.empty;
+    referrerHasCompletedLesson = (await countCompletedLessons(referrerUid)) >= 1;
   }
 
   await db.runTransaction(async (tx) => {
@@ -889,8 +954,32 @@ export const finalizeCompletedLessons = pubsub
       }
     }
 
-    // 完了数が変わったユーザーについてのみ紹介特典を判定する
+    // 完了数が変わったユーザーに関係する紹介を判定し直す。
+    // 対象は2種類ある:
+    //  1. そのユーザーが被紹介者である紹介（本人の受講回数が増えた）
+    //  2. そのユーザーが紹介者である紹介（「紹介者自身に受講実績が1回以上」の
+    //     条件を後から満たしたケース。ここを拾わないと、被紹介者が先に3回
+    //     受講し終えていた紹介の特典が永久に付与されない）
+    const refereeUidsToCheck = new Set<string>(affectedUserIds);
     for (const uid of affectedUserIds) {
+      try {
+        const asReferrer = await db
+          .collection("referrals")
+          .where("referrerUid", "==", uid)
+          .get();
+        for (const doc of asReferrer.docs) {
+          const referee = String((doc.data() || {}).refereeUid || doc.id);
+          if (referee) refereeUidsToCheck.add(referee);
+        }
+      } catch (error) {
+        logger.error("finalizeCompletedLessons: 紹介先の取得に失敗", {
+          uid,
+          error,
+        });
+      }
+    }
+
+    for (const uid of refereeUidsToCheck) {
       try {
         await processReferralMilestones(uid);
       } catch (error) {
@@ -1337,7 +1426,10 @@ export const submitReview = https.onCall(
       let couponId: string | null = null;
       let couponMessage = "";
 
-      if (!isStudent) {
+      if (!isWithinCampaign(REVIEW_CAMPAIGN_PERIOD, todayJstDate())) {
+        couponMessage =
+          "レビュー投稿キャンペーンは実施期間外のため、クーポンの付与はありません。";
+      } else if (!isStudent) {
         couponMessage = "運営・講師アカウントはキャンペーンの対象外です。";
       } else if (resGrantSnap.exists) {
         // レビューを削除して再投稿しても、この台帳が残っているため再付与されない

@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "lint": "echo Skipping lint",
     "serve": "firebase emulators:start --only functions",
+    "verify:campaigns": "npm run build && node scripts/verify-campaigns.js",
     "clean": "rimraf lib node_modules package-lock.json"
   },
   "main": "lib/index.js",
