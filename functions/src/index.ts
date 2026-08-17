@@ -1316,7 +1316,8 @@ export const getAvailableStudios = https.onCall(
 // その分だけ講師の取り分を増やす。長期的な継続の動機付けと、
 // プラットフォーム外での直接取引の抑止を狙う。
 //
-// 料率は予約作成時に reservations.commissionRate へスナップショット保存する。
+// 料率は予約作成時に reservationPayouts/{予約ID}.commissionRate へスナップショット保存する
+// （reservations は生徒本人も読めるため、料率はそちらに置かない）。
 // 後から料率表を変えても過去の精算額がぶれず、監査もできるようにするため。
 // ※ フロント側の表示は src/lib/adminStats.ts の COMMISSION_TIERS と対になっている。
 //    片方だけ変えないこと。
