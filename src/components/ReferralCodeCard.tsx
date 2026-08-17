@@ -17,11 +17,12 @@ export default function ReferralCodeCard({ heading }: Props) {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
 
-  // 紹介コードは生徒アカウントのみ。管理者・講師では呼んでも 403 になるので呼ばない
-  const isStudent = role === 'student';
+  // 紹介コードを持てるのは生徒と管理者。講師では呼んでも 403 になるので呼ばない
+  // （functions 側の canOwnReferralCode と揃えること）
+  const canOwnCode = role === 'student' || role === 'admin';
 
   useEffect(() => {
-    if (authLoading || !user || !isStudent) return;
+    if (authLoading || !user || !canOwnCode) return;
 
     let cancelled = false;
     (async () => {
@@ -43,7 +44,7 @@ export default function ReferralCodeCard({ heading }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [user, authLoading, isStudent]);
+  }, [user, authLoading, canOwnCode]);
 
   const handleCopy = async () => {
     if (!code) return;
@@ -62,7 +63,7 @@ export default function ReferralCodeCard({ heading }: Props) {
   // ロール判定が済むまでは何も出さない（一瞬「対象外」が見えるのを防ぐ）
   if (authLoading) return null;
 
-  if (!isStudent) {
+  if (!canOwnCode) {
     return (
       <section style={{ marginTop: '2rem' }}>
         {heading && <h3>{heading}</h3>}

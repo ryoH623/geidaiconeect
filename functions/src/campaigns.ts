@@ -587,6 +587,17 @@ export function normalizeEmail(raw: unknown): string {
   return raw.trim().toLowerCase();
 }
 
+/**
+ * 紹介コードを持てるロールか。
+ *
+ * 生徒に加えて管理者も対象。運営者自身が知人を紹介するケースがあるため
+ * （被紹介者側＝コードを入力する側は生徒に限る点は変えていない）。
+ */
+export function canOwnReferralCode(role: unknown): boolean {
+  const r = String(role || "");
+  return r === "student" || r === "admin";
+}
+
 // ========================================
 // Callable: 自分の紹介コードを取得（未発行なら採番）
 // ========================================
@@ -598,10 +609,10 @@ export const getMyReferralCode = https.onCall(
     const uid = context.auth.uid;
 
     const userSnap = await admin.firestore().collection("users").doc(uid).get();
-    if (!userSnap.exists || String(userSnap.data()?.role || "") !== "student") {
+    if (!userSnap.exists || !canOwnReferralCode(userSnap.data()?.role)) {
       throw new https.HttpsError(
         "permission-denied",
-        "紹介コードは生徒アカウントでご利用いただけます。"
+        "紹介コードは生徒アカウント・管理者アカウントでご利用いただけます。"
       );
     }
 
@@ -715,7 +726,7 @@ export const applyReferralCode = https.onCall(
     const referrerSnap = await db.collection("users").doc(referrerUid).get();
     if (
       !referrerSnap.exists ||
-      String(referrerSnap.data()?.role || "") !== "student"
+      !canOwnReferralCode(referrerSnap.data()?.role)
     ) {
       throw new https.HttpsError(
         "failed-precondition",

@@ -28,14 +28,14 @@ export default function ReferralPage() {
   const { user, role, loading: authLoading } = useAuth();
   const { coupons } = useMyCoupons();
 
-  // 友達紹介は生徒アカウント限定（functions 側も student 以外は弾く）
-  const isStudent = role === 'student';
+  // 紹介コードを持てるのは生徒と管理者（functions 側の canOwnReferralCode と揃えること）
+  const canOwnCode = role === 'student' || role === 'admin';
 
   const [referrals, setReferrals] = useState<Referral[]>([]);
 
   // 自分が紹介した相手の進捗
   useEffect(() => {
-    if (!user || !isStudent) {
+    if (!user || !canOwnCode) {
       setReferrals([]);
       return;
     }
@@ -53,7 +53,7 @@ export default function ReferralPage() {
       (err) => console.error('紹介状況の取得に失敗しました', err)
     );
     return () => unsubscribe();
-  }, [user, isStudent]);
+  }, [user, canOwnCode]);
 
   const stats = useMemo(() => {
     const invited = referrals.length;
@@ -90,7 +90,7 @@ export default function ReferralPage() {
     );
   }
 
-  if (!isStudent) {
+  if (!canOwnCode) {
     return (
       <main className="about-section fade-in-up">
         <h2 className="centered-heading-with-border">

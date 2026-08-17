@@ -7,8 +7,8 @@ import ReferralCodeCard from "../components/ReferralCodeCard";
 
 const MyPage: React.FC = () => {
   const { user, role } = useAuth();
-  // 友達紹介・クーポンは生徒アカウント向けの機能
-  const isStudent = role === "student";
+  // 友達紹介は生徒と管理者が対象（functions 側の canOwnReferralCode と揃えること）
+  const canOwnCode = role === "student" || role === "admin";
 
   return (
     <main className="about-section fade-in-up">
@@ -54,7 +54,7 @@ const MyPage: React.FC = () => {
             レビューを投稿する
           </Link>
 
-          {isStudent && (
+          {canOwnCode && (
             <Link
               to="/referral"
               className="form-button"
@@ -65,7 +65,7 @@ const MyPage: React.FC = () => {
           )}
         </div>
 
-        {isStudent && <ReferralCodeCard heading="あなたの紹介コード" />}
+        {canOwnCode && <ReferralCodeCard heading="あなたの紹介コード" />}
       </div>
     </main>
   );
