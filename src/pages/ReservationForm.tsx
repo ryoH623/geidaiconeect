@@ -12,6 +12,12 @@ import { usePrefectureCities, useTownsWithCoords } from '../hooks/useJapaneseAdd
 import { useStationSearch, type StationHit } from '../hooks/useStationSearch';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useMyCoupons } from '../hooks/useMyCoupons';
+import {
+  formatCouponExpiry,
+  judgeCouponUsable,
+  sortCouponsForPicker,
+} from '../lib/coupons';
 import '../index.css';
 
 type FormDataType = {
@@ -49,6 +55,8 @@ type CreateReservationAndCheckoutPayload = {
   studioId?: string;
   studioName?: string;
   studioFee?: number;
+  // 値引き額はサーバー側で再計算されるため、クーポンのIDだけを送る
+  couponId?: string;
 };
 
 type GetAvailableStudiosResult = {
@@ -409,12 +417,48 @@ const ReservationForm: React.FC = () => {
     return null;
   }, [studioSearchMode, selectedStation, regionTown, regionCity, regionTownOptions]);
 
-  // 合計金額（レッスン料 + スタジオ代）
-  const totalAmount = useMemo(() => {
+  // 小計（レッスン料 + スタジオ代）。クーポン値引き前の金額。
+  const subtotalAmount = useMemo(() => {
     const base = lessonAmount ?? 0;
     const studio = isStudioFlow && selectedStudio ? selectedStudio.pricePerSlot : 0;
     return base + studio;
   }, [lessonAmount, isStudioFlow, selectedStudio]);
+
+  // ── クーポン ─────────────────────────────────────────────
+  // コードの手入力ではなく、付与済みクーポンの一覧から選ばせる方式。
+  // ここでの値引き表示はあくまで目安で、実際の決済金額は Cloud Functions が
+  // 予約作成時に再計算する（フロントの金額は一切信用しない）。
+  const { coupons: myCoupons } = useMyCoupons();
+  const [selectedCouponId, setSelectedCouponId] = useState('');
+
+  const couponOptions = useMemo(
+    () => sortCouponsForPicker(myCoupons, subtotalAmount),
+    [myCoupons, subtotalAmount]
+  );
+
+  const selectedCoupon = useMemo(
+    () => myCoupons.find((c) => c.id === selectedCouponId) ?? null,
+    [myCoupons, selectedCouponId]
+  );
+
+  const couponDiscount = useMemo(() => {
+    if (!selectedCoupon) return 0;
+    return judgeCouponUsable(selectedCoupon, subtotalAmount).usable
+      ? selectedCoupon.discountAmount
+      : 0;
+  }, [selectedCoupon, subtotalAmount]);
+
+  // 実際に決済される金額。0円以下にはならない。
+  const payableAmount = Math.max(subtotalAmount - couponDiscount, 0);
+
+  // スタジオを変えて最低利用金額を割った場合など、選択したクーポンが
+  // 使えなくなったら選択を外す（使えないまま送信されるのを防ぐ）。
+  useEffect(() => {
+    if (!selectedCoupon) return;
+    if (!judgeCouponUsable(selectedCoupon, subtotalAmount).usable) {
+      setSelectedCouponId('');
+    }
+  }, [selectedCoupon, subtotalAmount]);
 
   // 会員情報（users/{uid}）からご予約者情報（氏名・フリガナ・メール・電話）と
   // 地域の初期値を取得する。予約フォームでは再入力させず、これらを自動で使う。
@@ -809,6 +853,10 @@ const ReservationForm: React.FC = () => {
         paymentMethod,
         lessonType: displayLessonType || undefined,
         durationMin: lessonDurationMin,
+        // 値引き額は送らない。サーバー側がクーポンを読み直して再計算する。
+        ...(couponDiscount > 0 && selectedCouponId
+          ? { couponId: selectedCouponId }
+          : {}),
         ...(isStudioFlow && selectedStudio
           ? {
               studioId: selectedStudio.id,
@@ -882,7 +930,16 @@ const ReservationForm: React.FC = () => {
               <>
                 <p><strong>スタジオ：</strong>{selectedStudio.name}</p>
                 <p><strong>スタジオ代：</strong>{selectedStudio.pricePerSlot.toLocaleString()}円</p>
-                <p><strong>合計：</strong>{totalAmount.toLocaleString()}円</p>
+                <p><strong>小計：</strong>{subtotalAmount.toLocaleString()}円</p>
+              </>
+            )}
+            {couponDiscount > 0 && selectedCoupon && (
+              <>
+                <p>
+                  <strong>クーポン：</strong>
+                  {selectedCoupon.name}（-{couponDiscount.toLocaleString()}円）
+                </p>
+                <p><strong>お支払い金額：</strong>{payableAmount.toLocaleString()}円</p>
               </>
             )}
             {displayLocationHint && (
@@ -1039,11 +1096,58 @@ const ReservationForm: React.FC = () => {
                     スタジオ代（{selectedStudio.name}）: {selectedStudio.pricePerSlot.toLocaleString()}円
                   </p>
                   <p style={{ margin: '2px 0', fontWeight: 'bold' }}>
-                    合計: {totalAmount.toLocaleString()}円
+                    小計: {subtotalAmount.toLocaleString()}円
                   </p>
                 </div>
               )}
             </div>
+
+            {/* クーポン。コード入力ではなく、付与済みの一覧から選ぶ方式。 */}
+            {couponOptions.length > 0 && (
+              <div className="form-group">
+                <label>クーポン</label>
+                <select
+                  className="form-control"
+                  value={selectedCouponId}
+                  onChange={(e) => setSelectedCouponId(e.target.value)}
+                >
+                  <option value="">使用しない</option>
+                  {couponOptions.map((c) => {
+                    const judged = judgeCouponUsable(c, subtotalAmount);
+                    return (
+                      <option key={c.id} value={c.id} disabled={!judged.usable}>
+                        {c.name}（{c.discountAmount.toLocaleString()}円引き）
+                        {judged.usable
+                          ? ` / ${formatCouponExpiry(c)}`
+                          : ` / ${judged.reason}`}
+                      </option>
+                    );
+                  })}
+                </select>
+
+                {selectedCoupon && (
+                  <p style={{ margin: '6px 0 0', fontSize: '0.85rem', color: '#555' }}>
+                    {selectedCoupon.terms || '他のクーポンとの併用はできません。'}
+                  </p>
+                )}
+
+                <div style={{ marginTop: 8, fontSize: '0.9rem' }}>
+                  {couponDiscount > 0 && (
+                    <p style={{ margin: '2px 0' }}>
+                      クーポン値引き: -{couponDiscount.toLocaleString()}円
+                    </p>
+                  )}
+                  <p style={{ margin: '2px 0', fontWeight: 'bold' }}>
+                    お支払い金額: {payableAmount.toLocaleString()}円
+                  </p>
+                </div>
+
+                <p style={{ margin: '6px 0 0', fontSize: '0.8rem', color: '#777' }}>
+                  クーポンは1回のご予約につき1枚まで、他のクーポンとの併用はできません。
+                  現金への交換はできません。
+                </p>
+              </div>
+            )}
 
             {displayLocationHint && (
               <div className="form-group">

@@ -5,11 +5,35 @@ import nodemailer from "nodemailer";
 import type { Response } from "express";
 import { google } from "googleapis";
 
+import {
+  COUPON_ON_CANCEL,
+  judgeCoupon,
+  markCouponUsed,
+  releaseCoupon,
+  reserveCouponInTx,
+  restoreUsedCoupon,
+  type CancelInitiator,
+} from "./campaigns";
+
 const Stripe = require("stripe");
 
 if (!admin.apps.length) {
   admin.initializeApp();
 }
+
+// キャンペーン（レビュー投稿クーポン・友達紹介）の関数群。
+// 実装は campaigns.ts にあり、ここでは公開（デプロイ対象化）するだけ。
+export {
+  submitReview,
+  getMyReferralCode,
+  checkReferralCode,
+  applyReferralCode,
+  finalizeCompletedLessons,
+  expireCoupons,
+  adminIssueCoupon,
+  adminCancelCoupon,
+  adminSetReferralBlocked,
+} from "./campaigns";
 
 // ========================================
 // Environment variables
@@ -279,6 +303,25 @@ function buildInfoMailHtml(params: {
 function reservationRows(r: any): Array<[string, string]> {
   const isOnline = r?.lessonType === "オンライン";
   const meetingUrl = typeof r?.meetingUrl === "string" ? r.meetingUrl : "";
+  const yen = (v: number) => `${v.toLocaleString("ja-JP")}円`;
+
+  // クーポンを使った予約は、レッスン料と実際の請求額が食い違う。
+  // 金額の行だけ見て「請求が多い」と誤解されないよう、内訳を出す。
+  const couponDiscount =
+    typeof r?.couponDiscount === "number" ? r.couponDiscount : 0;
+  const couponRows: Array<[string, string]> =
+    couponDiscount > 0
+      ? [
+          [
+            "クーポン",
+            `${String(r?.couponName ?? "クーポン")} -${yen(couponDiscount)}`,
+          ],
+          [
+            "お支払い金額",
+            typeof r?.totalAmount === "number" ? yen(r.totalAmount) : "",
+          ],
+        ]
+      : [];
 
   return [
     ["講師", String(r?.teacherName ?? "")],
@@ -293,11 +336,10 @@ function reservationRows(r: any): Array<[string, string]> {
         : String(r?.location ?? ""),
     ],
     [
-      "金額",
-      typeof r?.lessonAmount === "number"
-        ? `${r.lessonAmount.toLocaleString("ja-JP")}円`
-        : "",
+      couponDiscount > 0 ? "レッスン料" : "金額",
+      typeof r?.lessonAmount === "number" ? yen(r.lessonAmount) : "",
     ],
+    ...couponRows,
   ];
 }
 
@@ -447,6 +489,9 @@ type CreateReservationAndCheckoutData = {
   studioId?: string;
   studioName?: string;
   studioFee?: number;
+  // 利用するクーポン。値引き額はサーバー側で再計算するため、
+  // フロントから割引後の金額を受け取ることはしない。
+  couponId?: string;
 };
 
 type CreateReservationAndCheckoutResult = {
@@ -1316,7 +1361,8 @@ export const getAvailableStudios = https.onCall(
 // その分だけ講師の取り分を増やす。長期的な継続の動機付けと、
 // プラットフォーム外での直接取引の抑止を狙う。
 //
-// 料率は予約作成時に reservations.commissionRate へスナップショット保存する。
+// 料率は予約作成時に reservationPayouts/{予約ID}.commissionRate へスナップショット保存する
+// （reservations は生徒本人も読めるため、料率はそちらに置かない）。
 // 後から料率表を変えても過去の精算額がぶれず、監査もできるようにするため。
 // ※ フロント側の表示は src/lib/adminStats.ts の COMMISSION_TIERS と対になっている。
 //    片方だけ変えないこと。
@@ -1363,6 +1409,8 @@ export const createReservationAndCheckout = https.onCall(
     context
   ): Promise<CreateReservationAndCheckoutResult> => {
     let reservationRef: FirebaseFirestore.DocumentReference | null = null;
+    // 失敗時に仮押さえを解放するため、catch からも見える位置に持つ
+    let reservedCouponId = "";
 
     try {
       if (!context.auth) {
@@ -1389,7 +1437,10 @@ export const createReservationAndCheckout = https.onCall(
         studentLat,
         studentLng,
         studioId = "",
+        couponId: couponIdRaw = "",
       } = data || ({} as CreateReservationAndCheckoutData);
+
+      const couponId = typeof couponIdRaw === "string" ? couponIdRaw.trim() : "";
 
       // 支払い方法はカードのみ。旧クライアントが paypay を送ってきても card として扱う。
       const paymentMethod: "card" = "card";
@@ -1501,7 +1552,11 @@ export const createReservationAndCheckout = https.onCall(
         }
       }
 
-      const totalAmount = lessonAmount + studioFee;
+      // 金額の組み立て順:
+      //   1. レッスン料 → 2. スタジオ代などの実費 → 3. クーポン値引き → 4. 決済金額
+      // クーポンの値引き額はここでは決めず、トランザクション内でクーポン本体を
+      // 読んでから確定する（フロントから送られた金額は一切使わない）。
+      const subtotalAmount = lessonAmount + studioFee;
 
       const userId = context.auth.uid;
       const authEmail =
@@ -1557,8 +1612,17 @@ export const createReservationAndCheckout = https.onCall(
       // ずれても1件ぶんで、生徒に不利にはならない。
       const priorLessonCount = await countPaidLessons(userId, teacherId);
       const commissionRate = commissionRateFor(priorLessonCount);
+      // 手数料は「クーポン値引き前のレッスン料」に対して計算する。
+      // クーポンは運営が負担する販促費であり、講師の取り分を減らさない。
       const commissionAmount = Math.floor(lessonAmount * commissionRate);
       const teacherPayout = lessonAmount - commissionAmount;
+
+      // クーポン。値引き額と利用可否はトランザクション内で確定する。
+      const couponRef = couponId
+        ? admin.firestore().collection("coupons").doc(couponId)
+        : null;
+      let couponDiscount = 0;
+      let couponName = "";
       // 手数料の明細は予約と同じ ID で別コレクションに持つ（生徒からは読めない）
       const payoutRef = admin
         .firestore()
@@ -1583,6 +1647,25 @@ export const createReservationAndCheckout = https.onCall(
         const studioBookingSnap = studioBookingRef
           ? await tx.get(studioBookingRef)
           : null;
+
+        // クーポンの検証。トランザクション内で読むことで、同じクーポンが
+        // 複数の予約で同時に使われるのを防ぐ（後段で reserved に落とす）。
+        // 再試行に備えて毎回初期化する。
+        couponDiscount = 0;
+        couponName = "";
+        if (couponRef) {
+          const couponSnap = await tx.get(couponRef);
+          const judged = judgeCoupon(
+            couponSnap.exists ? couponSnap.data() : undefined,
+            { userId, subtotal: subtotalAmount }
+          );
+          if (!judged.usable) {
+            throw new https.HttpsError("failed-precondition", judged.reason);
+          }
+          couponDiscount = judged.discount;
+          couponName =
+            typeof judged.data.name === "string" ? judged.data.name : "クーポン";
+        }
 
         if (!scheduleSnap.exists) {
           throw new https.HttpsError(
@@ -1775,7 +1858,14 @@ export const createReservationAndCheckout = https.onCall(
           studioName: studioId ? resolvedStudioName : null,
           studioFee: studioId ? studioFee : null,
           studioBookingDocId: studioBookingDocId || null,
-          totalAmount,
+          // 金額の内訳。totalAmount は実際に決済する金額（値引き後）。
+          subtotalAmount,
+          couponId: couponId || null,
+          couponName: couponId ? couponName : null,
+          couponDiscount,
+          totalAmount: subtotalAmount - couponDiscount,
+          // 紹介特典の回数カウント用。finalizeCompletedLessons が true にする。
+          lessonCompleted: false,
           // 支払い方法と、カード与信の締切キャプチャ予定時刻
           paymentMethod,
           chargeDueAt: chargeDueTimestamp(date),
@@ -1801,10 +1891,21 @@ export const createReservationAndCheckout = https.onCall(
           commissionAmount,
           teacherPayout,
           priorLessonCount,
+          // クーポン値引きは運営負担。講師取り分には影響しないが、
+          // 運営の手取り（手数料 − 値引き）を出すために記録しておく。
+          couponDiscount,
           lessonDate: date,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
+
+        // クーポンを仮押さえ（reserved）。決済完了で used、期限切れ・失敗で available に戻す。
+        if (couponRef) {
+          reserveCouponInTx(tx, couponRef, reservationId);
+        }
       });
+
+      // ここから先で失敗したら解放が必要になる
+      reservedCouponId = couponId;
 
       const stripe = getStripeClient();
 
@@ -1849,6 +1950,39 @@ export const createReservationAndCheckout = https.onCall(
         });
       }
 
+      // クーポン値引き。Stripe の明細にマイナス行は作れないため、
+      // 先頭（レッスン料）から順に単価を引いていく。
+      // 値引き後の合計 = subtotalAmount - couponDiscount になる。
+      if (couponDiscount > 0) {
+        let remaining = couponDiscount;
+        for (const item of lineItems) {
+          if (remaining <= 0) break;
+          const unit = item.price_data.unit_amount as number;
+          const applied = Math.min(unit, remaining);
+          item.price_data.unit_amount = unit - applied;
+          item.price_data.product_data.description +=
+            `（${couponName} -${applied.toLocaleString("ja-JP")}円）`;
+          remaining -= applied;
+        }
+        if (remaining > 0) {
+          // judgeCoupon で小計 ≧ 最低利用金額を確認しているため通常は起きない
+          logger.error("クーポンの値引きを明細に配分しきれませんでした", {
+            reservationId,
+            couponId,
+            couponDiscount,
+            subtotalAmount,
+          });
+          throw new https.HttpsError(
+            "failed-precondition",
+            "クーポンを適用できませんでした。"
+          );
+        }
+        // 0円になった明細は Stripe に送らない
+        for (let i = lineItems.length - 1; i >= 0; i -= 1) {
+          if (lineItems[i].price_data.unit_amount <= 0) lineItems.splice(i, 1);
+        }
+      }
+
       // カードのみ。与信（capture_method=manual）→ キャンセル締切日にキャプチャする。
       const sessionParams: any = {
         mode: "payment",
@@ -1871,6 +2005,8 @@ export const createReservationAndCheckout = https.onCall(
           studentName: name,
           studentEmail: email,
           paymentMethod,
+          // webhook 側でクーポンを used / available に遷移させるために持たせる
+          couponId,
         },
         expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
       };
@@ -1909,6 +2045,11 @@ export const createReservationAndCheckout = https.onCall(
 
       if (reservationRef) {
         try {
+          // 仮押さえしたクーポンを利用可能に戻す（予約が成立しなかったため）
+          if (reservedCouponId) {
+            await releaseCoupon(reservedCouponId, reservationRef.id);
+          }
+
           const reservationSnap = await reservationRef.get();
           const reservationData = reservationSnap.exists ? reservationSnap.data() : null;
           const scheduleDocId = reservationData?.scheduleDocId;
@@ -2095,6 +2236,10 @@ export const getReservationForSuccess = https.onRequest(async (req, res) => {
         teacherEmail: reservation.teacherEmail ?? "",
         lessonCourse: reservation.lessonCourse ?? "",
         lessonAmount: reservation.lessonAmount ?? 0,
+        // クーポン利用時はレッスン料と請求額が異なるため、内訳も返す
+        couponName: reservation.couponName ?? "",
+        couponDiscount: reservation.couponDiscount ?? 0,
+        totalAmount: reservation.totalAmount ?? 0,
         lessonDate: reservation.lessonDate ?? "",
         lessonTime: reservation.lessonTime ?? "",
         name: reservation.name ?? "",
@@ -2284,6 +2429,21 @@ export const stripeWebhook = https.onRequest(async (req, res) => {
         return shouldSendPaidEmail;
       });
 
+      // クーポンの使用確定。Checkout を作っただけでは used にせず、
+      // 支払い完了（このイベント）を受けて初めて確定する。
+      const couponId =
+        typeof session.metadata?.couponId === "string"
+          ? session.metadata.couponId
+          : "";
+      if (couponId) {
+        const marked = await markCouponUsed(couponId, reservationId);
+        logger.info("stripeWebhook: クーポンを使用済みにしました", {
+          reservationId,
+          couponId,
+          marked,
+        });
+      }
+
       logger.info("stripeWebhook: checkout.session.completed 処理", {
         reservationId,
         sessionId: session.id,
@@ -2390,10 +2550,20 @@ export const stripeWebhook = https.onRequest(async (req, res) => {
           }
         });
 
+        // 決済されなかったので、仮押さえしていたクーポンを利用可能に戻す
+        const couponId =
+          typeof session.metadata?.couponId === "string"
+            ? session.metadata.couponId
+            : "";
+        if (couponId) {
+          await releaseCoupon(couponId, reservationId);
+        }
+
         logger.info("stripeWebhook: expired session processed", {
           reservationId,
           sessionId: session.id,
           scheduleDocId,
+          couponId,
         });
       }
     }
@@ -2561,11 +2731,12 @@ export const releaseExpiredHolds = pubsub
     // 解放した枠に紐づく予約を expired に（webhook 処理と冪等）
     for (const rid of staleReservationIds) {
       try {
-        await admin.firestore().runTransaction(async (tx) => {
+        const couponId = await admin.firestore().runTransaction(async (tx) => {
           const ref = admin.firestore().collection("reservations").doc(rid);
           const snap = await tx.get(ref);
-          if (!snap.exists) return;
-          if ((snap.data() || {}).paymentStatus !== "pending_payment") return;
+          if (!snap.exists) return "";
+          const r = snap.data() || {};
+          if (r.paymentStatus !== "pending_payment") return "";
           tx.set(
             ref,
             {
@@ -2576,7 +2747,13 @@ export const releaseExpiredHolds = pubsub
             { merge: true }
           );
           counts.reservations += 1;
+          return typeof r.couponId === "string" ? r.couponId : "";
         });
+
+        // 決済に至らなかった予約が押さえていたクーポンを利用可能に戻す
+        if (couponId) {
+          await releaseCoupon(couponId, rid);
+        }
       } catch (error) {
         logger.error("releaseExpiredHolds: 予約の expired 更新に失敗", {
           reservationId: rid,
@@ -2693,6 +2870,11 @@ export const captureDueAuthorizations = pubsub
         await sendPaymentCompletedEmails(doc.id);
       } else if (!ok) {
         counts.failed += 1;
+        // 請求できなかったので、使用済みにしたクーポンは利用可能に戻す
+        const couponId = typeof r.couponId === "string" ? r.couponId : "";
+        if (couponId) {
+          await restoreUsedCoupon(couponId, doc.id);
+        }
       }
     }
 
@@ -2813,6 +2995,11 @@ export const cancelReservation = https.onCall(
       );
     }
 
+    // この関数は生徒本人からのキャンセルのみを受け付ける（上で userId を検証済み）。
+    // 講師都合・運営都合のキャンセル経路を作るときは、ここを変えるのではなく
+    // 別の呼び出し口から initiator を渡し、COUPON_ON_CANCEL の表に従わせる。
+    const cancelInitiator: CancelInitiator = "student";
+
     // 返金成功後: 予約をキャンセル済みにし、枠を再開放する
     try {
       const scheduleDocId =
@@ -2861,6 +3048,7 @@ export const cancelReservation = https.onCall(
             // 与信取消は未請求のため voided、返金は refunded
             paymentStatus: isAuthorizedOnly ? "voided" : "refunded",
             refundId,
+            cancelledBy: cancelInitiator,
             cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
@@ -2907,10 +3095,25 @@ export const cancelReservation = https.onCall(
       );
     }
 
+    // クーポンの扱いはキャンセルした側で決まる（COUPON_ON_CANCEL）。
+    // 生徒都合は消費したまま。運営・講師都合のときだけ利用可能に戻す。
+    const usedCouponId = typeof r.couponId === "string" ? r.couponId : "";
+    if (usedCouponId) {
+      if (COUPON_ON_CANCEL[cancelInitiator] === "restore") {
+        await restoreUsedCoupon(usedCouponId, reservationId);
+      } else {
+        // 決済前（reserved のまま）にキャンセルされた場合だけは解放する。
+        // 使わないまま塩漬けになるのを防ぐためで、使用済みのものは戻さない。
+        await releaseCoupon(usedCouponId, reservationId);
+      }
+    }
+
     logger.info("cancelReservation success", {
       reservationId,
       refundId,
       isAuthorizedOnly,
+      couponId: usedCouponId,
+      cancelledBy: cancelInitiator,
     });
 
     // 通知メール（失敗してもキャンセル自体は成功として返す）

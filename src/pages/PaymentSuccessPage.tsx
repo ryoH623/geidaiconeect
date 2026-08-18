@@ -11,6 +11,10 @@ type ReservationResponse = {
     teacherEmail?: string;
     lessonCourse?: string;
     lessonAmount?: number;
+    // クーポン利用時のみ入る。レッスン料と実際の請求額が異なるため内訳を出す。
+    couponName?: string;
+    couponDiscount?: number;
+    totalAmount?: number;
     lessonDate?: string;
     lessonTime?: string;
     name?: string;
@@ -188,11 +192,28 @@ const PaymentSuccessPage: React.FC = () => {
               {reservation?.lessonDate || ''} {reservation?.lessonTime || ''}
             </p>
             <p>
-              <strong>料金：</strong>
+              <strong>
+                {reservation?.couponDiscount ? 'レッスン料：' : '料金：'}
+              </strong>
               {typeof reservation?.lessonAmount === 'number'
                 ? `${reservation.lessonAmount.toLocaleString()}円`
                 : ''}
             </p>
+            {!!reservation?.couponDiscount && (
+              <>
+                <p>
+                  <strong>クーポン：</strong>
+                  {reservation.couponName || 'クーポン'}（-
+                  {reservation.couponDiscount.toLocaleString()}円）
+                </p>
+                <p>
+                  <strong>お支払い金額：</strong>
+                  {typeof reservation.totalAmount === 'number'
+                    ? `${reservation.totalAmount.toLocaleString()}円`
+                    : ''}
+                </p>
+              </>
+            )}
             <p>
               <strong>お名前：</strong>
               {reservation?.name || ''}

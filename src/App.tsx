@@ -27,6 +27,7 @@ import VerifyEmailNotice from "./pages/VerifyEmailNotice";
 import MyPage from "./pages/MyPage";
 import Profile from "./pages/Profile";
 import StudentReservations from "./pages/student/StudentReservations";
+import ReferralPage from "./pages/student/ReferralPage";
 import ProtectedRoute from "./ProtectedRoute";
 
 // 予約フォームと講師・管理画面はバンドルが大きく、初期表示では不要なため遅延読み込みする
@@ -45,6 +46,11 @@ const AdminTeacherDetail = lazy(() => import("./pages/admin/AdminTeacherDetail")
 const AdminReservations = lazy(() => import("./pages/admin/AdminReservations"));
 const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
 const AdminReviews = lazy(() => import("./pages/admin/AdminReviews"));
+const AdminCoupons = lazy(() => import("./pages/admin/AdminCoupons"));
+const AdminReferrals = lazy(() => import("./pages/admin/AdminReferrals"));
+const AdminUserCampaigns = lazy(
+  () => import("./pages/admin/AdminUserCampaigns")
+);
 const AdminContacts = lazy(() => import("./pages/admin/AdminContacts"));
 const AdminRequests = lazy(() => import("./pages/admin/AdminRequests"));
 const TestCheckoutPage = lazy(() => import("./pages/TestCheckoutPage"));
@@ -111,6 +117,15 @@ function App() {
             element={
               <ProtectedRoute>
                 <Profile />
+              </ProtectedRoute>
+            }
+          />
+          {/* 友達紹介（紹介コードの確認・実績・獲得クーポン） */}
+          <Route
+            path="/referral"
+            element={
+              <ProtectedRoute>
+                <ReferralPage />
               </ProtectedRoute>
             }
           />
@@ -211,6 +226,31 @@ function App() {
             element={
               <RequireAdmin>
                 <AdminReviews />
+              </RequireAdmin>
+            }
+          />
+          {/* キャンペーン（クーポン・友達紹介）の管理 */}
+          <Route
+            path="/admin/coupons"
+            element={
+              <RequireAdmin>
+                <AdminCoupons />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/admin/referrals"
+            element={
+              <RequireAdmin>
+                <AdminReferrals />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/admin/users/:uid/campaigns"
+            element={
+              <RequireAdmin>
+                <AdminUserCampaigns />
               </RequireAdmin>
             }
           />

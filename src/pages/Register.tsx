@@ -2,7 +2,8 @@ import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { auth, db } from "../firebase";
+import { httpsCallable } from "firebase/functions";
+import { auth, db, functions } from "../firebase";
 import { ADULT_AGE, calcAge, isValidBirthday } from "../lib/age";
 
 type Gender = "" | "male" | "female" | "other";
@@ -40,6 +41,10 @@ const Register: React.FC = () => {
   const [guardianPhone, setGuardianPhone] = useState("");
 
   // 規約同意
+  // 友達紹介コード（任意）。適用は Cloud Functions（applyReferralCode）が検証する。
+  const [referralCode, setReferralCode] = useState("");
+  const [referralNotice, setReferralNotice] = useState("");
+
   const [agree, setAgree] = useState(false);
 
   // 状態
@@ -196,7 +201,26 @@ const Register: React.FC = () => {
         { merge: true }
       );
 
-      // 4) 検証メールは Functions の onCreate で自動送信されるため、
+      // 4) 友達紹介コード（任意）。コードが無効でも登録自体は成立させ、
+      //    案内だけ出す（ここで登録を失敗させると再登録できなくなるため）。
+      if (referralCode.trim()) {
+        try {
+          const applyReferralCode = httpsCallable<
+            { code: string },
+            { ok: boolean; message: string }
+          >(functions, "applyReferralCode");
+          await applyReferralCode({ code: referralCode.trim() });
+        } catch (referralErr: any) {
+          console.error("[register] 紹介コードの適用に失敗:", referralErr);
+          setReferralNotice(
+            typeof referralErr?.message === "string" && referralErr.message
+              ? `紹介コードは登録できませんでした（${referralErr.message}）。会員登録は完了しています。`
+              : "紹介コードは登録できませんでした。会員登録は完了しています。"
+          );
+        }
+      }
+
+      // 5) 検証メールは Functions の onCreate で自動送信されるため、
       //    フロントから sendVerifyEmail は呼ばない
 
       setError(null);
@@ -408,6 +432,28 @@ const Register: React.FC = () => {
             onChange={e => setConfirm(e.target.value)}
             required
           />
+
+          {/* 友達紹介コード（任意）。
+              登録後は変更できず、初回レッスンのご予約後は登録できないため、
+              その旨をここで明示しておく。 */}
+          <label>友達紹介コード（任意）</label>
+          <input
+            type="text"
+            placeholder="例：GC-8F3K2M"
+            value={referralCode}
+            onChange={e => setReferralCode(e.target.value)}
+            maxLength={16}
+            autoCapitalize="characters"
+          />
+          <p className="form-note" style={{ fontSize: "0.85rem", color: "#666" }}>
+            お友達からコードを受け取った方はご入力ください。初回レッスンの完了後に
+            500円クーポンをお届けします。登録後の変更はできません。
+          </p>
+          {referralNotice && (
+            <p className="form-note" style={{ fontSize: "0.85rem", color: "#a06000" }}>
+              {referralNotice}
+            </p>
+          )}
 
           <div className="row-2">
             <label className="checkbox-label">

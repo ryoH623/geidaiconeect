@@ -20,6 +20,8 @@ export type CreateReservationAndCheckoutData = {
   studioId?: string;
   studioName?: string;
   studioFee?: number;
+  // 利用するクーポン。値引き額はサーバ側で再計算するため送らない
+  couponId?: string;
 };
 
 type CreateReservationAndCheckoutResult = {

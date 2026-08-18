@@ -3,9 +3,12 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import ReferralCodeCard from "../components/ReferralCodeCard";
 
 const MyPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
+  // 友達紹介は生徒と管理者が対象（functions 側の canOwnReferralCode と揃えること）
+  const canOwnCode = role === "student" || role === "admin";
 
   return (
     <main className="about-section fade-in-up">
@@ -50,7 +53,19 @@ const MyPage: React.FC = () => {
           >
             レビューを投稿する
           </Link>
+
+          {canOwnCode && (
+            <Link
+              to="/referral"
+              className="form-button"
+              style={{ textAlign: "center" }}
+            >
+              友達紹介・クーポン
+            </Link>
+          )}
         </div>
+
+        {canOwnCode && <ReferralCodeCard heading="あなたの紹介コード" />}
       </div>
     </main>
   );

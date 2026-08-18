@@ -63,10 +63,11 @@ service cloud.firestore {
 
     match /reviews/{reviewId} {
       allow read: if true;
-      // 投稿者は必ず自分自身。以前はログインしていれば userId に他人の ID を
-      // 入れて投稿できたため、なりすましレビューが可能だった。
-      allow create: if isSignedIn()
-        && request.auth.uid == request.resource.data.userId;
+      // 作成は Cloud Functions（submitReview, Admin SDK でルールをバイパス）経由のみ。
+      // クライアントから直接書けると、レビュー投稿キャンペーンの付与条件
+      // （支払い済み・受講済み・本人・1回まで）を検証できず、
+      // キャンペーン対象を示す campaign フィールドも自由に詐称できてしまう。
+      allow create: if false;
       // 更新できるのは次の2通りだけ。変更できるフィールドも限定する。
       //  - 投稿者本人: 本文と評価のみ（投稿者・対象講師の付け替えや、
       //    講師になりすまして reply を書くことを防ぐ）
@@ -125,6 +126,47 @@ service cloud.firestore {
     // 書き込みは Cloud Functions（Admin SDK）経由のみ（二重予約防止）
     match /studioBookings/{bookingId} {
       allow read: if true;
+      allow create, update, delete: if false;
+    }
+
+    // クーポン。本人が予約フォームで一覧・選択するため read は本人と admin。
+    // 発行・状態遷移（available/reserved/used/expired/cancelled）はすべて
+    // Cloud Functions（Admin SDK）が行う。クライアントから書ければ
+    // 値引き額も使用済み判定も詐称できてしまう。
+    match /coupons/{couponId} {
+      allow read: if (isSignedIn() && request.auth.uid == resource.data.userId)
+        || isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // 付与済みかどうかの台帳（ドキュメントIDが決め打ち）。
+    // 存在自体が「付与済み」を意味するため、本人にも見せずサーバー専用にする。
+    match /couponGrants/{grantKey} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // 友達紹介の紐づけ。紹介者は自分が紹介した相手の進捗を見る必要があるため、
+    // 紹介者・被紹介者の双方が read できる（金額や個人情報は入れない）。
+    match /referrals/{refereeUid} {
+      allow read: if (isSignedIn()
+        && (request.auth.uid == resource.data.refereeUid
+            || request.auth.uid == resource.data.referrerUid))
+        || isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // 運営の手動操作（クーポンの発行・無効化、紹介の無効化）の監査ログ。
+    // 誰がいつ何をなぜ行ったかの記録なので、書き込みは Cloud Functions のみ。
+    match /campaignAuditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // 紹介コード → uid の逆引き。総当たりで他人を特定されないよう read は admin のみ。
+    // 照合は Cloud Functions（checkReferralCode / applyReferralCode）が行う。
+    match /referralCodes/{code} {
+      allow read: if isAdmin();
       allow create, update, delete: if false;
     }
   }
