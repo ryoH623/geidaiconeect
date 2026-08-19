@@ -1,3 +1,9 @@
+// ⚠️ このファイルは Firestore（teacherProfiles）への移行用シードです。
+//
+// 表示・予約に使う講師データの正は Firestore にあります。画面から読むときは
+// src/lib/teacherProfiles.ts と src/hooks/useTeachers.ts を使ってください。
+// ここを編集してもサイトには反映されません（/admin/teacher-profiles で取り込んだ時のみ）。
+
 export interface Teacher {
   /** 講師詳細ページ（/teachers/:id）で使う URL 用スラッグ。authUid は未連携の講師がいるため使わない */
   id: string;

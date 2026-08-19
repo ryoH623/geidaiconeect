@@ -4,7 +4,8 @@ import { getAuth } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { doc, getDoc } from 'firebase/firestore';
 import BookingCalendar from '../components/booking/BookingCalendar';
-import { teachers, getCourses } from '../data/teachers';
+import { useTeachers } from '../hooks/useTeachers';
+import { getCourses } from '../lib/teacherProfiles';
 import { prefectures } from '../data/prefectures';
 import { citiesByPrefecture } from '../data/citiesByPrefecture';
 import type { AvailableStudio } from '../data/studios';
@@ -72,6 +73,8 @@ type CreateReservationAndCheckoutResult = {
 };
 
 const ReservationForm: React.FC = () => {
+  // 講師データは Firestore（公開中のみ）から読む
+  const { teachers, loading: teachersLoading } = useTeachers();
   const location = useLocation();
   const navigate = useNavigate();
   const auth = getAuth();
@@ -228,6 +231,9 @@ const ReservationForm: React.FC = () => {
   ]);
 
   useEffect(() => {
+    // 講師一覧が届く前に実行すると、必ず「見つからない」と誤判定してしまう
+    if (teachersLoading) return;
+
     try {
       setTeacherLoading(true);
 
@@ -278,7 +284,7 @@ const ReservationForm: React.FC = () => {
     } finally {
       setTeacherLoading(false);
     }
-  }, [teacherIdFromQuery, teacherNameFromQuery]);
+  }, [teacherIdFromQuery, teacherNameFromQuery, teachers, teachersLoading]);
 
   const selectedTeacherCourse = useMemo(() => {
     let foundTeacher = null;
@@ -306,10 +312,13 @@ const ReservationForm: React.FC = () => {
     console.log('===============================================');
 
     return foundCourse;
-  }, [teacherIdFromQuery, teacherNameFromQuery, lessonCourse]);
+  }, [teacherIdFromQuery, teacherNameFromQuery, lessonCourse, teachers]);
 
   const lessonAmount = useMemo(() => {
-    const priceSource = priceFromQuery || selectedTeacherCourse?.price || lessonCourse;
+    // コースの料金は数値、クエリ由来は文字列。どちらも来るので文字列に寄せて解釈する
+    const priceSource = String(
+      priceFromQuery || selectedTeacherCourse?.price || lessonCourse
+    );
     const normalized = priceSource.replace(/,/g, '');
     const match = normalized.match(/(\d{3,6})\s*円?/);
     const amount = match ? Number(match[1]) : null;

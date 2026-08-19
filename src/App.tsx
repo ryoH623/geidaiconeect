@@ -54,6 +54,9 @@ const AdminUserCampaigns = lazy(
 const AdminContacts = lazy(() => import("./pages/admin/AdminContacts"));
 const AdminRequests = lazy(() => import("./pages/admin/AdminRequests"));
 const AdminSearchLogs = lazy(() => import("./pages/admin/AdminSearchLogs"));
+const AdminTeacherProfiles = lazy(
+  () => import("./pages/admin/AdminTeacherProfiles")
+);
 const TestCheckoutPage = lazy(() => import("./pages/TestCheckoutPage"));
 
 function App() {
@@ -163,6 +166,14 @@ function App() {
             element={
               <RequireAdmin>
                 <AdminHome />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/admin/teacher-profiles"
+            element={
+              <RequireAdmin>
+                <AdminTeacherProfiles />
               </RequireAdmin>
             }
           />

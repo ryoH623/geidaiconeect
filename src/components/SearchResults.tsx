@@ -3,23 +3,17 @@
 // 各カードはクリックで講師詳細（/teachers/:id）へ遷移する。
 import React, { useEffect } from "react";
 import { useLocation, Link } from "react-router-dom";
-import { teachers, getCourses, Teacher } from "../data/teachers";
+import { useTeachers } from "../hooks/useTeachers";
+import { minCoursePriceLabel } from "../lib/teacherProfiles";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { tagIconMap } from "../utils/tagIconMap";
 import { useAuth } from "../contexts/AuthContext";
 import { logSearch } from "../lib/searchLog";
 import "../index.css";
 
-// コース最安値（例: "4,000円〜"）。トップページと同じ表記。
-function minCoursePrice(teacher: Teacher): string | null {
-  const prices = getCourses(teacher)
-    .map((c) => parseInt(c.price.replace(/[^0-9]/g, ""), 10))
-    .filter((n) => Number.isFinite(n) && n > 0);
-  if (prices.length === 0) return null;
-  return `${Math.min(...prices).toLocaleString()}円〜`;
-}
-
 const SearchResults: React.FC = () => {
+  // 講師データは Firestore（公開中のみ）から読む
+  const { teachers, loading: teachersLoading } = useTeachers();
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const rawKeyword = searchParams.get("keyword") || "";
@@ -51,9 +45,11 @@ const SearchResults: React.FC = () => {
 
   useEffect(() => {
     if (authLoading) return;
+    // 読み込み中は結果が0件に見える。ここで記録すると実在しない0件検索が混ざる
+    if (teachersLoading) return;
     if (role === "admin") return;
     logSearch({ keyword: rawKeyword, category, resultCount });
-  }, [rawKeyword, category, resultCount, role, authLoading]);
+  }, [rawKeyword, category, resultCount, role, authLoading, teachersLoading]);
 
   return (
     <main className="about-section fade-in-up">
@@ -67,10 +63,12 @@ const SearchResults: React.FC = () => {
         </p>
       )}
 
-      {filteredTeachers.length > 0 ? (
+      {teachersLoading ? (
+        <p style={{ textAlign: "center" }}>講師情報を読み込んでいます…</p>
+      ) : filteredTeachers.length > 0 ? (
         <div className="teacher-card-grid">
           {filteredTeachers.map((teacher) => {
-            const price = minCoursePrice(teacher);
+            const price = minCoursePriceLabel(teacher);
             return (
               <Link
                 key={teacher.id}

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { teachers, getCourses, Teacher } from "./data/teachers";
+import { useTeachers } from "./hooks/useTeachers";
+import { minCoursePriceLabel } from "./lib/teacherProfiles";
 import BudouxText from "./components/BudouxText";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -69,15 +70,6 @@ const flowSteps = [
   },
 ];
 
-// コース料金（"6,000円" など）から最低料金を取り出して「◯◯円〜」表示に使う
-function minCoursePrice(teacher: Teacher): string | null {
-  const prices = getCourses(teacher)
-    .map((c) => parseInt(c.price.replace(/[^0-9]/g, ""), 10))
-    .filter((n) => Number.isFinite(n) && n > 0);
-  if (prices.length === 0) return null;
-  return `${Math.min(...prices).toLocaleString()}円〜`;
-}
-
 // ヒーローの装飾アート（金彩の月と流れる弦をイメージした抽象画）
 const HeroArt: React.FC = () => (
   <svg
@@ -143,19 +135,22 @@ const HeroArt: React.FC = () => (
 );
 
 const GeidaiConnectUi: React.FC = () => {
+  // 講師データは Firestore（公開中のみ）から読む
+  const { teachers, loading: teachersLoading } = useTeachers();
+
   const [selectedPrefecture, setSelectedPrefecture] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
   const [selectedSubject, setSelectedSubject] = useState("");
 
   const prefectureOptions = useMemo(
     () => Array.from(new Set(teachers.map((t) => t.prefecture))).sort(),
-    []
+    [teachers]
   );
 
   // ジャンルは実際に講師がいるものだけを候補にする
   const genreOptions = useMemo(
     () => Array.from(new Set(teachers.flatMap((t) => t.genres))).sort(),
-    []
+    [teachers]
   );
 
   const cityOptions = selectedPrefecture
@@ -324,10 +319,12 @@ const GeidaiConnectUi: React.FC = () => {
           </select>
         </div>
 
-        {filteredTeachers.length > 0 ? (
+        {teachersLoading ? (
+          <p style={{ textAlign: "center" }}>講師情報を読み込んでいます…</p>
+        ) : filteredTeachers.length > 0 ? (
           <div className="teacher-card-grid">
             {filteredTeachers.map((teacher) => {
-              const price = minCoursePrice(teacher);
+              const price = minCoursePriceLabel(teacher);
               return (
                 <Link
                   key={teacher.id}

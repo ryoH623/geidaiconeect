@@ -170,6 +170,18 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // 講師プロフィールとコース。
+    //
+    // 公開中（published == true）のものは未ログインの訪問者にも見せる。
+    // 未公開（下書き・申請中）は運営と本人だけが読める。書き込みは今は運営のみで、
+    // 講師本人による編集は別途フォームを用意してから開放する。
+    match /teacherProfiles/{teacherId} {
+      allow read: if resource.data.published == true
+        || isAdmin()
+        || (isSignedIn() && resource.data.authUid == request.auth.uid);
+      allow create, update, delete: if isAdmin();
+    }
+
     // 検索ログ。集計を見るのは運営だけなので read は admin のみ。
     // 書き込みは logSearch（Cloud Functions）に限る。クライアントから直接
     // 書けると、件数を水増しして需要があるように見せかけられてしまう。

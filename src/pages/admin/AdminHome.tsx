@@ -28,6 +28,14 @@ const AdminHome: React.FC = () => {
           </Link>
 
           <Link
+            to="/admin/teacher-profiles"
+            className="form-button"
+            style={{ textAlign: "center" }}
+          >
+            講師の公開管理
+          </Link>
+
+          <Link
             to="/admin/search-logs"
             className="form-button"
             style={{ textAlign: "center" }}

@@ -2,8 +2,9 @@
 // 講師詳細ページ（/teachers/:id）。静的データ（src/data/teachers.ts）から表示する。
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { teachers, getCourses } from "../data/teachers";
-import type { LessonCourse } from "../data/teachers";
+import { useTeachers } from "../hooks/useTeachers";
+import { getCourses, formatPrice } from "../lib/teacherProfiles";
+import type { LessonCourse } from "../lib/teacherProfiles";
 import ReviewList from "../components/ReviewList";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { tagIconMap } from "../utils/tagIconMap";
@@ -18,6 +19,8 @@ const TeacherDetail: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
 
+  // 講師データは Firestore（公開中のみ）から読む
+  const { teachers, loading: teachersLoading } = useTeachers();
   const teacher = teachers.find((t) => t.id === id) || null;
 
   // 表示・予約に使うコース一覧。オンライン対応の講師には
@@ -28,20 +31,27 @@ const TeacherDetail: React.FC = () => {
   // 選択中のコースをタブ内で保持する（コース名で保存し、閉じれば消える）。
   const courseStorageKey = teacher ? `teacherDetail:course:${teacher.id}` : "";
 
-  const [selectedCourse, setSelectedCourse] = useState<LessonCourse | null>(() => {
-    if (!teacher) return null;
+  const [selectedCourse, setSelectedCourse] = useState<LessonCourse | null>(null);
+
+  // 講師データは非同期で届くため、届いてから保存済みの選択を復元する。
+  // useState の初期化時点ではコース一覧がまだ空になる。
+  const [restored, setRestored] = useState(false);
+  useEffect(() => {
+    if (restored || !courseStorageKey || courses.length === 0) return;
+    setRestored(true);
 
     try {
       const savedTitle = sessionStorage.getItem(courseStorageKey);
-      if (!savedTitle) return null;
-      return courses.find((c) => c.title === savedTitle) ?? null;
+      if (!savedTitle) return;
+      const found = courses.find((c) => c.title === savedTitle);
+      if (found) setSelectedCourse(found);
     } catch {
-      return null;
+      // sessionStorage が使えない環境では復元しないだけでよい
     }
-  });
+  }, [restored, courseStorageKey, courses]);
 
   useEffect(() => {
-    if (!courseStorageKey) return;
+    if (!courseStorageKey || !restored) return;
 
     try {
       if (selectedCourse) sessionStorage.setItem(courseStorageKey, selectedCourse.title);
@@ -49,7 +59,7 @@ const TeacherDetail: React.FC = () => {
     } catch (error) {
       console.warn("コース選択の保存に失敗しました:", error);
     }
-  }, [courseStorageKey, selectedCourse]);
+  }, [courseStorageKey, selectedCourse, restored]);
 
   // 体験レッスンは生徒1人につき1回まで。この講師で既に体験を受講済みかどうかを判定する。
   // （確定済み＝confirmed の予約で、コース名が体験コースのものがあれば「受講済み」）
@@ -98,6 +108,16 @@ const TeacherDetail: React.FC = () => {
   useEffect(() => {
     if (trialUsed && selectedCourse?.isTrial) setSelectedCourse(null);
   }, [trialUsed, selectedCourse]);
+
+  if (teachersLoading) {
+    return (
+      <main className="about-section fade-in-up">
+        <p style={{ textAlign: "center", margin: "2rem 0" }}>
+          講師情報を読み込んでいます…
+        </p>
+      </main>
+    );
+  }
 
   if (!teacher) {
     return (
@@ -247,7 +267,7 @@ const TeacherDetail: React.FC = () => {
                           </div>
                         )}
                       </td>
-                      <td>{course.price}</td>
+                      <td>{formatPrice(course.price)}</td>
                       <td>{course.note || "-"}</td>
                     </tr>
                   ))}
