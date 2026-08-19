@@ -2,7 +2,7 @@
 // 講師詳細ページ（/teachers/:id）。静的データ（src/data/teachers.ts）から表示する。
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { teachers } from "../data/teachers";
+import { teachers, getCourses } from "../data/teachers";
 import type { LessonCourse } from "../data/teachers";
 import ReviewList from "../components/ReviewList";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -20,6 +20,10 @@ const TeacherDetail: React.FC = () => {
 
   const teacher = teachers.find((t) => t.id === id) || null;
 
+  // 表示・予約に使うコース一覧。オンライン対応の講師には
+  // getCourses がオンラインコースを自動で足す。teacher.courses を直接読まないこと。
+  const courses = teacher ? getCourses(teacher) : [];
+
   // 予約フォームからブラウザバックで戻ってきたときにコース選択をやり直さずに済むよう、
   // 選択中のコースをタブ内で保持する（コース名で保存し、閉じれば消える）。
   const courseStorageKey = teacher ? `teacherDetail:course:${teacher.id}` : "";
@@ -30,7 +34,7 @@ const TeacherDetail: React.FC = () => {
     try {
       const savedTitle = sessionStorage.getItem(courseStorageKey);
       if (!savedTitle) return null;
-      return teacher.courses.find((c) => c.title === savedTitle) ?? null;
+      return courses.find((c) => c.title === savedTitle) ?? null;
     } catch {
       return null;
     }
@@ -56,7 +60,7 @@ const TeacherDetail: React.FC = () => {
       setTrialUsed(false);
       return;
     }
-    const trialTitles = teacher.courses
+    const trialTitles = courses
       .filter((c) => c.isTrial)
       .map((c) => c.title);
     if (trialTitles.length === 0) {
@@ -204,7 +208,7 @@ const TeacherDetail: React.FC = () => {
           ))}
         </p>
 
-        {teacher.courses.length > 0 && (
+        {courses.length > 0 && (
           <div className="course-table">
             <h4>レッスンコース</h4>
             <form>
@@ -218,7 +222,7 @@ const TeacherDetail: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {teacher.courses
+                  {courses
                     .filter((course) => !(course.isTrial && trialUsed))
                     .map((course, i) => (
                     <tr key={i}>
@@ -250,7 +254,7 @@ const TeacherDetail: React.FC = () => {
                 </tbody>
               </table>
             </form>
-            {trialUsed && teacher.courses.some((c) => c.isTrial) && (
+            {trialUsed && courses.some((c) => c.isTrial) && (
               <p style={{ fontSize: "0.85rem", color: "#8a8270", marginTop: "0.5rem" }}>
                 ※体験レッスンは1回のみです。受講済みのため一覧に表示していません。
               </p>

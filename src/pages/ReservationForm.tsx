@@ -4,7 +4,7 @@ import { getAuth } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { doc, getDoc } from 'firebase/firestore';
 import BookingCalendar from '../components/booking/BookingCalendar';
-import { teachers } from '../data/teachers';
+import { teachers, getCourses } from '../data/teachers';
 import { prefectures } from '../data/prefectures';
 import { citiesByPrefecture } from '../data/citiesByPrefecture';
 import type { AvailableStudio } from '../data/studios';
@@ -295,12 +295,13 @@ const ReservationForm: React.FC = () => {
       return null;
     }
 
-    const foundCourse = foundTeacher.courses.find((c) => c.title === lessonCourse) || null;
+    const teacherCourses = getCourses(foundTeacher);
+    const foundCourse = teacherCourses.find((c) => c.title === lessonCourse) || null;
 
     console.log('================ コース検索ログ ================');
     console.log('対象講師:', foundTeacher.name);
     console.log('URL lessonCourse:', lessonCourse);
-    console.log('講師の courses:', foundTeacher.courses);
+    console.log('講師の courses:', teacherCourses);
     console.log('一致した selectedTeacherCourse:', foundCourse);
     console.log('===============================================');
 
