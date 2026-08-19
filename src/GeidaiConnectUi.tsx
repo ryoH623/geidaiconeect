@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { teachers, Teacher } from "./data/teachers";
+import { teachers, getCourses, Teacher } from "./data/teachers";
 import BudouxText from "./components/BudouxText";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -71,7 +71,7 @@ const flowSteps = [
 
 // コース料金（"6,000円" など）から最低料金を取り出して「◯◯円〜」表示に使う
 function minCoursePrice(teacher: Teacher): string | null {
-  const prices = teacher.courses
+  const prices = getCourses(teacher)
     .map((c) => parseInt(c.price.replace(/[^0-9]/g, ""), 10))
     .filter((n) => Number.isFinite(n) && n > 0);
   if (prices.length === 0) return null;

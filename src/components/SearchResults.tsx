@@ -3,7 +3,7 @@
 // 各カードはクリックで講師詳細（/teachers/:id）へ遷移する。
 import React, { useEffect } from "react";
 import { useLocation, Link } from "react-router-dom";
-import { teachers, Teacher } from "../data/teachers";
+import { teachers, getCourses, Teacher } from "../data/teachers";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { tagIconMap } from "../utils/tagIconMap";
 import { useAuth } from "../contexts/AuthContext";
@@ -12,7 +12,7 @@ import "../index.css";
 
 // コース最安値（例: "4,000円〜"）。トップページと同じ表記。
 function minCoursePrice(teacher: Teacher): string | null {
-  const prices = teacher.courses
+  const prices = getCourses(teacher)
     .map((c) => parseInt(c.price.replace(/[^0-9]/g, ""), 10))
     .filter((n) => Number.isFinite(n) && n > 0);
   if (prices.length === 0) return null;
