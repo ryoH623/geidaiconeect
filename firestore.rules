@@ -169,5 +169,13 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow create, update, delete: if false;
     }
+
+    // 検索ログ。集計を見るのは運営だけなので read は admin のみ。
+    // 書き込みは logSearch（Cloud Functions）に限る。クライアントから直接
+    // 書けると、件数を水増しして需要があるように見せかけられてしまう。
+    match /searchLogs/{logId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
   }
 }
