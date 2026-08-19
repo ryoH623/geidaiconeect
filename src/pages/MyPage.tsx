@@ -9,6 +9,7 @@ const MyPage: React.FC = () => {
   const { user, role } = useAuth();
   // 友達紹介は生徒と管理者が対象（functions 側の canOwnReferralCode と揃えること）
   const canOwnCode = role === "student" || role === "admin";
+  const isTeacher = role === "teacher";
 
   return (
     <main className="about-section fade-in-up">
@@ -30,6 +31,26 @@ const MyPage: React.FC = () => {
             gap: "16px",
           }}
         >
+          {isTeacher && (
+            <>
+              <Link
+                to="/teacher/profile"
+                className="form-button"
+                style={{ textAlign: "center" }}
+              >
+                プロフィール・コースの登録
+              </Link>
+
+              <Link
+                to="/schedule-list"
+                className="form-button"
+                style={{ textAlign: "center" }}
+              >
+                スケジュール管理
+              </Link>
+            </>
+          )}
+
           <Link
             to="/history"
             className="form-button"

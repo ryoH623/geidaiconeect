@@ -179,6 +179,9 @@ service cloud.firestore {
       allow read: if resource.data.published == true
         || isAdmin()
         || (isSignedIn() && resource.data.authUid == request.auth.uid);
+      // 書き込みは運営と、Cloud Functions（saveMyTeacherProfile）経由の本人のみ。
+      // 講師に直接の書き込みを許すと published を自分で true にできてしまい、
+      // 運営の確認を通さずに公開できてしまう。
       allow create, update, delete: if isAdmin();
     }
 

@@ -33,6 +33,9 @@ import ProtectedRoute from "./ProtectedRoute";
 // 予約フォームと講師・管理画面はバンドルが大きく、初期表示では不要なため遅延読み込みする
 const ReservationForm = lazy(() => import("./pages/ReservationForm"));
 const ScheduleForm = lazy(() => import("./pages/teachers/ScheduleForm"));
+const TeacherProfileForm = lazy(
+  () => import("./pages/teachers/TeacherProfileForm")
+);
 const ScheduleList = lazy(() => import("./pages/teachers/ScheduleList"));
 const TeacherReservations = lazy(
   () => import("./pages/teachers/TeacherReservations")
@@ -135,6 +138,14 @@ function App() {
           />
 
           {/* 🔐 講師専用ルート（ガード付き） */}
+          <Route
+            path="/teacher/profile"
+            element={
+              <RequireTeacher>
+                <TeacherProfileForm />
+              </RequireTeacher>
+            }
+          />
           <Route
             path="/schedule-form"
             element={

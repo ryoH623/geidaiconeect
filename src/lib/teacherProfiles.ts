@@ -164,6 +164,20 @@ export async function fetchAllTeachers(): Promise<TeacherProfile[]> {
   return snap.docs.map((d) => toTeacherProfile(d.id, d.data()));
 }
 
+/**
+ * ログイン中の講師自身のプロフィールを取得する。
+ * 未公開でも本人なら読めるよう firestore.rules で許可している。
+ */
+export async function fetchMyTeacherProfile(
+  uid: string
+): Promise<TeacherProfile | null> {
+  const q = query(collection(db, TEACHER_PROFILES), where('authUid', '==', uid));
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return toTeacherProfile(d.id, d.data());
+}
+
 /** 1件取得。見つからなければ null */
 export async function fetchTeacher(id: string): Promise<TeacherProfile | null> {
   const snap = await getDoc(doc(db, TEACHER_PROFILES, id));

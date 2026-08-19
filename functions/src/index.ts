@@ -45,6 +45,9 @@ export {
   acceptTeacherInvite,
 } from "./teacherInvites";
 
+// 講師本人によるプロフィール・コースの編集。実装は teacherProfileEdit.ts にある。
+export { saveMyTeacherProfile } from "./teacherProfileEdit";
+
 // ========================================
 // Environment variables
 // ========================================
