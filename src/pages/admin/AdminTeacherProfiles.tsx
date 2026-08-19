@@ -6,7 +6,14 @@
 // 公開する（published を true にする）。公開後の取り下げもここで行う。
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../../firebase";
 import {
@@ -43,7 +50,41 @@ const AdminTeacherProfiles: React.FC = () => {
   const [inviting, setInviting] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const createInvite = async () => {
+  // 講師応募の一覧。ここから招待を作ると、応募内容がそのまま引き継がれる
+  type Application = {
+    id: string;
+    name: string;
+    email: string;
+    subject: string;
+    status: string;
+    seconds: number;
+  };
+  const [applications, setApplications] = useState<Application[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await getDocs(collection(db, "teacherApplications"));
+        const list = snap.docs.map((d) => {
+          const x = d.data();
+          return {
+            id: d.id,
+            name: typeof x.name === "string" ? x.name : "",
+            email: typeof x.email === "string" ? x.email : "",
+            subject: typeof x.subject === "string" ? x.subject : "",
+            status: typeof x.status === "string" ? x.status : "new",
+            seconds: x.createdAt?.seconds ?? 0,
+          };
+        });
+        list.sort((a, b) => b.seconds - a.seconds);
+        setApplications(list);
+      } catch (err) {
+        console.error("講師応募の取得に失敗しました:", err);
+      }
+    })();
+  }, []);
+
+  const createInvite = async (applicationId?: string) => {
     setInviteError("");
     setInviteUrl("");
     setCopied(false);
@@ -51,13 +92,19 @@ const AdminTeacherProfiles: React.FC = () => {
     try {
       setInviting(true);
       const callable = httpsCallable<
-        { name: string; email: string; teacherId: string },
+        {
+          name: string;
+          email: string;
+          teacherId: string;
+          applicationId?: string;
+        },
         { ok: boolean; token: string; url: string; expiresAt: string }
       >(functions, "adminCreateTeacherInvite");
       const res = await callable({
         name: inviteName.trim(),
         email: inviteEmail.trim(),
         teacherId: inviteSlug.trim(),
+        ...(applicationId ? { applicationId } : {}),
       });
       // 相手に送るのは絶対URL。相対パスのままでは使えない
       setInviteUrl(`${window.location.origin}${res.data.url}`);
@@ -251,10 +298,59 @@ const AdminTeacherProfiles: React.FC = () => {
             有効期限は14日、1回使うと無効になります。
           </p>
 
+          {/* 応募から作れば、氏名・連絡先・住所・ジャンル・自己紹介が
+              そのまま引き継がれる。講師が同じことを二度入力せずに済む */}
+          {applications.length > 0 && (
+            <div style={{ marginBottom: "1.25rem" }}>
+              <h4 style={{ marginBottom: 6 }}>応募から招待する（推奨）</h4>
+              <p style={{ fontSize: "0.85rem", color: "#666", lineHeight: 1.8 }}>
+                応募フォームの内容（お名前・連絡先・ご住所・ジャンル・自己紹介）が
+                会員登録画面と講師プロフィールに引き継がれます。
+              </p>
+              {applications.map((a) => (
+                <div
+                  key={a.id}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 8,
+                    flexWrap: "wrap",
+                    border: "1px solid #eee",
+                    borderRadius: 8,
+                    padding: "8px 12px",
+                    marginBottom: 6,
+                  }}
+                >
+                  <span style={{ fontSize: "0.9rem" }}>
+                    {a.name}
+                    {a.subject && `（${a.subject}）`}
+                    <br />
+                    <span style={{ color: "#888", fontSize: "0.8rem" }}>
+                      {a.email}
+                      {a.seconds > 0 &&
+                        ` / ${new Date(a.seconds * 1000).toLocaleDateString()}`}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="form-button"
+                    onClick={() => createInvite(a.id)}
+                    disabled={inviting}
+                  >
+                    この応募から招待
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <h4 style={{ marginBottom: 6 }}>手動で招待する</h4>
+
           <div style={{ display: "grid", gap: 10, maxWidth: 420 }}>
             <input
               type="text"
-              placeholder="講師名（例: 印田 陽介）"
+              placeholder="講師名（例：藝大 太郎）"
               value={inviteName}
               onChange={(e) => setInviteName(e.target.value)}
               style={{ padding: "8px 12px", borderRadius: 6 }}
@@ -268,7 +364,7 @@ const AdminTeacherProfiles: React.FC = () => {
             />
             <input
               type="text"
-              placeholder="講師ページのURL（英数字・例: yosuke-inda）"
+              placeholder="講師ページのURL（任意・英数字。空欄なら自動）"
               value={inviteSlug}
               onChange={(e) => setInviteSlug(e.target.value)}
               style={{ padding: "8px 12px", borderRadius: 6 }}
@@ -276,8 +372,8 @@ const AdminTeacherProfiles: React.FC = () => {
             <button
               type="button"
               className="form-button"
-              onClick={createInvite}
-              disabled={inviting || !inviteName.trim() || !inviteSlug.trim()}
+              onClick={() => createInvite()}
+              disabled={inviting || !inviteName.trim()}
             >
               {inviting ? "発行中..." : "招待URLを発行する"}
             </button>

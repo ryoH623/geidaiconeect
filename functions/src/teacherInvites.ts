@@ -21,6 +21,11 @@ const INVITE_VALID_DAYS = 14;
 const TOKEN_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const TOKEN_LENGTH = 24;
 
+function str(v: unknown, max: number): string {
+  if (typeof v !== "string") return "";
+  return v.trim().slice(0, max);
+}
+
 function generateToken(): string {
   let out = "";
   for (let i = 0; i < TOKEN_LENGTH; i += 1) {
@@ -41,6 +46,37 @@ function normalizeSlug(raw: unknown): string {
     .slice(0, 60);
 }
 
+/**
+ * 講師ページのURLを自動で採番する。
+ *
+ * 氏名は日本語なので URL には使えず、ローマ字も持っていない。
+ * そのため意味のない短いIDを振る。読みやすいURLを付けたい場合は
+ * 招待の発行時に明示的に指定できる。
+ */
+async function generateSlug(): Promise<string> {
+  const db = admin.firestore();
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    let suffix = "";
+    for (let i = 0; i < 6; i += 1) {
+      suffix += TOKEN_CHARS[Math.floor(Math.random() * TOKEN_CHARS.length)];
+    }
+    const candidate = `t-${suffix.toLowerCase()}`;
+
+    // 発行済みで未使用の招待とも衝突させない
+    const [profile, invite] = await Promise.all([
+      db.collection(TEACHER_PROFILES).doc(candidate).get(),
+      db.collection(INVITES).where("teacherId", "==", candidate).limit(1).get(),
+    ]);
+    if (!profile.exists && invite.empty) return candidate;
+  }
+
+  throw new https.HttpsError(
+    "internal",
+    "講師ページのURLを採番できませんでした。時間をおいてお試しください。"
+  );
+}
+
 async function assertAdmin(uid: string | undefined): Promise<void> {
   if (!uid) {
     throw new https.HttpsError("unauthenticated", "ログインが必要です。");
@@ -56,27 +92,44 @@ async function assertAdmin(uid: string | undefined): Promise<void> {
 // ========================================
 export const adminCreateTeacherInvite = https.onCall(
   async (
-    data: { name?: string; email?: string; teacherId?: string },
+    data: {
+      name?: string;
+      email?: string;
+      teacherId?: string;
+      applicationId?: string;
+    },
     context
   ): Promise<{ ok: boolean; token: string; url: string; expiresAt: string }> => {
     await assertAdmin(context.auth?.uid);
 
-    const name = typeof data?.name === "string" ? data.name.trim().slice(0, 100) : "";
-    const email =
-      typeof data?.email === "string" ? data.email.trim().toLowerCase().slice(0, 200) : "";
-    const teacherId = normalizeSlug(data?.teacherId);
+    const db = admin.firestore();
+
+    // 応募から作る場合は、応募フォームの内容をそのまま引き継ぐ。
+    // 同じことを講師に二度入力させないため。
+    const applicationId = str(data?.applicationId, 100);
+    let application: Record<string, unknown> | null = null;
+    if (applicationId) {
+      const appSnap = await db
+        .collection("teacherApplications")
+        .doc(applicationId)
+        .get();
+      if (!appSnap.exists) {
+        throw new https.HttpsError("not-found", "応募が見つかりませんでした。");
+      }
+      application = appSnap.data() || {};
+    }
+
+    const name = str(data?.name, 100) || str(application?.name, 100);
+    const email = (
+      str(data?.email, 200) || str(application?.email, 200)
+    ).toLowerCase();
 
     if (!name) {
       throw new https.HttpsError("invalid-argument", "講師名を入力してください。");
     }
-    if (!teacherId) {
-      throw new https.HttpsError(
-        "invalid-argument",
-        "講師ページのURL（英数字）を入力してください。"
-      );
-    }
 
-    const db = admin.firestore();
+    // 指定がなければ自動で採番する
+    const teacherId = normalizeSlug(data?.teacherId) || (await generateSlug());
 
     // 既に公開・登録済みのスラッグとぶつかると、別人の講師ページを上書きしかねない
     const existing = await db.collection(TEACHER_PROFILES).doc(teacherId).get();
@@ -92,11 +145,33 @@ export const adminCreateTeacherInvite = https.onCall(
       new Date(Date.now() + INVITE_VALID_DAYS * 24 * 60 * 60 * 1000)
     );
 
+    // 会員登録画面と、講師プロフィールの下書きに使う
+    const addr = (application?.address || {}) as Record<string, unknown>;
+    const prefill = {
+      name,
+      furigana: str(application?.furigana, 100),
+      email,
+      phone: str(application?.phone, 30),
+      prefecture: str(addr.prefecture, 20),
+      city: str(addr.city, 50),
+      town: str(addr.town, 100),
+      line: str(addr.line, 200),
+      subject: str(application?.subject, 50),
+      bio: str(application?.bio, 2000),
+      lessonTypes: Array.isArray(application?.lessonTypes)
+        ? (application.lessonTypes as unknown[])
+            .filter((x): x is string => typeof x === "string")
+            .slice(0, 10)
+        : [],
+    };
+
     await db.collection(INVITES).doc(token).set({
       token,
       name,
       email: email || null,
       teacherId,
+      applicationId: applicationId || null,
+      prefill,
       used: false,
       usedBy: null,
       usedAt: null,
@@ -126,10 +201,22 @@ export const checkTeacherInvite = https.onCall(
   async (
     data: { token?: string },
     _context
-  ): Promise<{ ok: boolean; valid: boolean; name: string; message: string }> => {
+  ): Promise<{
+    ok: boolean;
+    valid: boolean;
+    name: string;
+    message: string;
+    prefill: Record<string, unknown> | null;
+  }> => {
     const token = typeof data?.token === "string" ? data.token.trim() : "";
     if (!token) {
-      return { ok: true, valid: false, name: "", message: "招待コードが指定されていません。" };
+      return {
+        ok: true,
+        valid: false,
+        name: "",
+        message: "招待コードが指定されていません。",
+        prefill: null,
+      };
     }
 
     const snap = await admin.firestore().collection(INVITES).doc(token).get();
@@ -139,6 +226,7 @@ export const checkTeacherInvite = https.onCall(
         valid: false,
         name: "",
         message: "この招待URLは見つかりませんでした。運営にお問い合わせください。",
+        prefill: null,
       };
     }
 
@@ -149,6 +237,7 @@ export const checkTeacherInvite = https.onCall(
         valid: false,
         name: "",
         message: "この招待URLは既に使用されています。",
+        prefill: null,
       };
     }
 
@@ -159,14 +248,18 @@ export const checkTeacherInvite = https.onCall(
         valid: false,
         name: "",
         message: "この招待URLは有効期限が切れています。運営にお問い合わせください。",
+        prefill: null,
       };
     }
 
+    // 入力の手間を省くために応募フォームの内容を返す。
+    // トークンを知っている本人にしか渡らないが、返すのは本人が自分で書いた情報だけ。
     return {
       ok: true,
       valid: true,
       name: String(invite.name || ""),
       message: "",
+      prefill: (invite.prefill as Record<string, unknown>) || null,
     };
   }
 );
@@ -257,18 +350,26 @@ export const acceptTeacherInvite = https.onCall(
         });
       } else {
         // 下書きを作る。公開されるのは運営が公開操作をした後
+        // 応募フォームの内容をそのまま下書きに写す。
+        // 講師が同じことを三度目に入力しなくて済むようにする。
+        const prefill = (invite.prefill || {}) as Record<string, unknown>;
+        const lessonTypes = Array.isArray(prefill.lessonTypes)
+          ? (prefill.lessonTypes as string[])
+          : [];
+        const subject = String(prefill.subject || "");
+
         tx.set(profileRef, {
           authUid: uid,
           name: displayName,
-          furigana: "",
-          prefecture: String(user.prefecture || ""),
-          city: "",
-          genres: [],
+          furigana: String(prefill.furigana || user.lastNameKana || ""),
+          prefecture: String(prefill.prefecture || user.prefecture || ""),
+          city: String(prefill.city || ""),
+          genres: subject ? [subject] : [],
           tags: [],
-          profile: "",
+          profile: String(prefill.bio || ""),
           photo: "",
           courses: [],
-          onlineAvailable: false,
+          onlineAvailable: lessonTypes.includes("オンライン"),
           published: false,
           status: "draft",
           createdAt: admin.firestore.FieldValue.serverTimestamp(),

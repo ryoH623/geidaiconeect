@@ -24,6 +24,9 @@ const Register: React.FC = () => {
   const [inviteName, setInviteName] = useState("");
   const [inviteMessage, setInviteMessage] = useState("");
 
+  /** 講師として登録する画面か。生徒向けの項目を出し分けるのに使う */
+  const isTeacherSignup = !!inviteToken && inviteValid;
+
   // 基本
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -71,13 +74,39 @@ const Register: React.FC = () => {
       try {
         const check = httpsCallable<
           { token: string },
-          { ok: boolean; valid: boolean; name: string; message: string }
+          {
+            ok: boolean;
+            valid: boolean;
+            name: string;
+            message: string;
+            prefill: Record<string, string> | null;
+          }
         >(functions, "checkTeacherInvite");
         const res = await check({ token: inviteToken });
         if (cancelled) return;
         setInviteValid(res.data.valid);
         setInviteName(res.data.name || "");
         setInviteMessage(res.data.message || "");
+
+        // 応募フォームに書いた内容を引き継ぎ、同じことを二度入力させない。
+        // 空欄のときだけ埋める（入力途中の内容を上書きしないため）。
+        const pre = res.data.prefill;
+        if (res.data.valid && pre) {
+          const p = pre as Record<string, string>;
+          // 応募は氏名を1つの文字列で受けているため、空白で姓と名に分ける
+          const [pLast, ...pRest] = String(p.name || "").split(/[\s　]+/);
+          const [kLast, ...kRest] = String(p.furigana || "").split(/[\s　]+/);
+
+          setEmail((v) => v || String(p.email || ""));
+          setLastName((v) => v || pLast || "");
+          setFirstName((v) => v || pRest.join("") || "");
+          setLastNameKana((v) => v || kLast || "");
+          setFirstNameKana((v) => v || kRest.join("") || "");
+          setPhone((v) => v || String(p.phone || ""));
+          setPrefecture((v) => v || String(p.prefecture || ""));
+          setAddress1((v) => v || [p.city, p.town].filter(Boolean).join(""));
+          setAddress2((v) => v || String(p.line || ""));
+        }
       } catch (err) {
         console.error("[register] 招待の確認に失敗:", err);
         if (!cancelled) {
@@ -162,7 +191,7 @@ const Register: React.FC = () => {
 
     // 18歳未満は法定代理人（保護者）の情報を必須にする。
     // 自己申告のチェックだけでなく、誰の同意を得たのかを記録として残すため。
-    if (minor) {
+    if (minor && !isTeacherSignup) {
       if (!guardianName.trim() || !guardianNameKana.trim() || !guardianRelationship) {
         setError("18歳未満の方は、保護者のお名前・フリガナ・続柄をご入力ください。");
         return;
@@ -228,7 +257,7 @@ const Register: React.FC = () => {
             : null,
           // 未成年の場合のみ、誰の同意を得たのかを記録として残す。
           // 年齢は誕生日で変わるため保存せず、birthday から都度算出する。
-          guardian: minor
+          guardian: minor && !isTeacherSignup
             ? {
                 name: guardianName.trim(),
                 nameKana: guardianNameKana.trim(),
@@ -246,7 +275,7 @@ const Register: React.FC = () => {
 
       // 4) 友達紹介コード（任意）。コードが無効でも登録自体は成立させ、
       //    案内だけ出す（ここで登録を失敗させると再登録できなくなるため）。
-      if (referralCode.trim()) {
+      if (referralCode.trim() && !isTeacherSignup) {
         try {
           const applyReferralCode = httpsCallable<
             { code: string },
@@ -443,8 +472,9 @@ const Register: React.FC = () => {
             </select>
           </div>
 
-          {/* 18歳未満のときだけ表示。法定代理人の同意を記録として残すため */}
-          {minor && (
+          {/* 18歳未満のときだけ表示。法定代理人の同意を記録として残すため。
+              講師は成人が前提なので講師登録では出さない */}
+          {minor && !isTeacherSignup && (
             <>
               {/* .form-grid は「ラベル｜入力欄」の2カラムグリッドなので、
                   見出しだけ row-2 で全幅にし、各項目は直接の子要素として並べる */}
@@ -529,9 +559,11 @@ const Register: React.FC = () => {
             required
           />
 
-          {/* 友達紹介コード（任意）。
+          {/* 友達紹介コード（任意）。生徒向けの制度なので講師登録では出さない。
               登録後は変更できず、初回レッスンのご予約後は登録できないため、
               その旨をここで明示しておく。 */}
+          {!isTeacherSignup && (
+            <>
           <label>友達紹介コード（任意）</label>
           <input
             type="text"
@@ -550,6 +582,8 @@ const Register: React.FC = () => {
               {referralNotice}
             </p>
           )}
+            </>
+          )}
 
           <div className="row-2">
             <label className="checkbox-label">
@@ -563,9 +597,11 @@ const Register: React.FC = () => {
                   利用規約
                 </a>
                 に同意して申込みます。
-                {minor
-                  ? "上記の保護者（法定代理人）の同意を得ていることを確認します。"
-                  : "未成年者については法定代理人の同意を得ていることを確認します。"}
+                {/* 講師は成人が前提なので、未成年に関する文言は出さない */}
+                {!isTeacherSignup &&
+                  (minor
+                    ? "上記の保護者（法定代理人）の同意を得ていることを確認します。"
+                    : "未成年者については法定代理人の同意を得ていることを確認します。")}
               </span>
             </label>
           </div>
