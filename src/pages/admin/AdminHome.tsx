@@ -28,6 +28,14 @@ const AdminHome: React.FC = () => {
           </Link>
 
           <Link
+            to="/admin/search-logs"
+            className="form-button"
+            style={{ textAlign: "center" }}
+          >
+            検索ログ（0件検索の把握）
+          </Link>
+
+          <Link
             to="/admin/commission-sim"
             className="form-button"
             style={{ textAlign: "center" }}

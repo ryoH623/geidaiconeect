@@ -1,11 +1,13 @@
 // 検索結果ページ（/search?keyword=&category=）。
 // レイアウトは他ページに合わせ、白カード枠＋中央見出し＋トップページと同じ講師カードで表示する。
 // 各カードはクリックで講師詳細（/teachers/:id）へ遷移する。
-import React from "react";
+import React, { useEffect } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { teachers, Teacher } from "../data/teachers";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { tagIconMap } from "../utils/tagIconMap";
+import { useAuth } from "../contexts/AuthContext";
+import { logSearch } from "../lib/searchLog";
 import "../index.css";
 
 // コース最安値（例: "4,000円〜"）。トップページと同じ表記。
@@ -40,6 +42,18 @@ const SearchResults: React.FC = () => {
   ]
     .filter(Boolean)
     .join(" / ");
+
+  // 検索条件と結果件数を記録する。0件の検索は「取りこぼした需要」そのもので、
+  // どの分野の講師を増やすべきかの判断材料になる。
+  // 運営自身の検索は数字を歪めるので除外する。
+  const { role, loading: authLoading } = useAuth();
+  const resultCount = filteredTeachers.length;
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (role === "admin") return;
+    logSearch({ keyword: rawKeyword, category, resultCount });
+  }, [rawKeyword, category, resultCount, role, authLoading]);
 
   return (
     <main className="about-section fade-in-up">
@@ -107,9 +121,24 @@ const SearchResults: React.FC = () => {
           })}
         </div>
       ) : (
-        <p className="teacher-empty-note">
-          条件に合う講師が見つかりませんでした。検索条件を変更してお試しください。
-        </p>
+        <div style={{ textAlign: "center" }}>
+          <p className="teacher-empty-note">
+            条件に合う講師が見つかりませんでした。検索条件を変更してお試しください。
+          </p>
+          {/* 0件で終わらせず、要望として拾う。講師を増やす際の判断材料にもなる */}
+          <p style={{ color: "#8a8270", marginTop: "1rem", lineHeight: 1.9 }}>
+            お探しの分野の講師が見つからない場合は、ご希望をお聞かせください。
+            <br />
+            条件に合う講師が加わった際にご案内できる場合があります。
+          </p>
+          <Link
+            to="/request"
+            className="form-button"
+            style={{ display: "inline-block", marginTop: "0.5rem" }}
+          >
+            希望を伝える（リクエスト）
+          </Link>
+        </div>
       )}
     </main>
   );

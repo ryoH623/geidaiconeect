@@ -35,6 +35,9 @@ export {
   adminSetReferralBlocked,
 } from "./campaigns";
 
+// 検索ログ（0件検索の記録）。実装は searchLogs.ts にある。
+export { logSearch, purgeOldSearchLogs } from "./searchLogs";
+
 // ========================================
 // Environment variables
 // ========================================

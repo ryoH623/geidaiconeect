@@ -57,12 +57,12 @@ firebase deploy --only functions   # デプロイ（predeploy で lint と build
 
 - firebase-functions **v1 API**（`firebase-functions/v1`）を使用。リージョンは `us-central1`（フロントの `getFunctions(app, "us-central1")` と一致させること）。
 - 環境変数は `defineString()` パラメータで定義: SMTP_*, APP_URL, STRIPE_SECRET_KEY, STRIPE_SUCCESS_URL, STRIPE_CANCEL_URL, STRIPE_WEBHOOK_SECRET。
-- エクスポート（onCall/onRequest）: `sendVerifyEmail`, `resendVerifyEmail`, `createCheckoutSession`, `getAvailableStudios`, `createReservationAndCheckout`, `getReservationForSuccess`, `stripeWebhook`, `cancelReservation`, `rescheduleReservation`, `setMeetingUrl`, `submitContact`, `submitRequest`, `submitTeacherApplication`, `studioAdminHttp`, `submitReview`, `getMyReferralCode`, `checkReferralCode`, `applyReferralCode`, `adminIssueCoupon`, `adminCancelCoupon`, `adminSetReferralBlocked`。
-- スケジュール実行（pubsub）: `sendLessonReminders`（レッスン前リマインド）, `releaseExpiredHolds`（期限切れ pending の枠解放）, `captureDueAuthorizations`（締切を過ぎたカード与信のキャプチャ）, `finalizeCompletedLessons`（レッスン完了の確定と紹介特典の判定）, `expireCoupons`（期限切れクーポンの整理）。
+- エクスポート（onCall/onRequest）: `sendVerifyEmail`, `resendVerifyEmail`, `createCheckoutSession`, `getAvailableStudios`, `createReservationAndCheckout`, `getReservationForSuccess`, `stripeWebhook`, `cancelReservation`, `rescheduleReservation`, `setMeetingUrl`, `submitContact`, `submitRequest`, `submitTeacherApplication`, `studioAdminHttp`, `submitReview`, `getMyReferralCode`, `checkReferralCode`, `applyReferralCode`, `adminIssueCoupon`, `adminCancelCoupon`, `adminSetReferralBlocked`, `logSearch`。
+- スケジュール実行（pubsub）: `sendLessonReminders`（レッスン前リマインド）, `releaseExpiredHolds`（期限切れ pending の枠解放）, `captureDueAuthorizations`（締切を過ぎたカード与信のキャプチャ）, `finalizeCompletedLessons`（レッスン完了の確定と紹介特典の判定）, `expireCoupons`（期限切れクーポンの整理）, `purgeOldSearchLogs`（保持期間を過ぎた検索ログの削除）。
 
 ### Firestore
 
-主なコレクション: `users`（本人のみ read/write）, `reservations`（削除禁止）, `reviews`（作成は Functions のみ）, `schedules`（read は公開）, `coupons`（本人のみ read）, `couponGrants` / `referralCodes`（admin のみ read）, `referrals`（紹介者・被紹介者が read）。ルールは [firestore.rules](firestore.rules)。
+主なコレクション: `users`（本人のみ read/write）, `reservations`（削除禁止）, `reviews`（作成は Functions のみ）, `schedules`（read は公開）, `coupons`（本人のみ read）, `couponGrants` / `referralCodes`（admin のみ read）, `referrals`（紹介者・被紹介者が read）, `searchLogs`（read は admin のみ・書き込みは Functions のみ）。ルールは [firestore.rules](firestore.rules)。
 
 ### フロントエンド構成
 
