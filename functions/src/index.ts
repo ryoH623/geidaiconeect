@@ -38,6 +38,13 @@ export {
 // 検索ログ（0件検索の記録）。実装は searchLogs.ts にある。
 export { logSearch, purgeOldSearchLogs } from "./searchLogs";
 
+// 講師の招待（role: teacher の付与）。実装は teacherInvites.ts にある。
+export {
+  adminCreateTeacherInvite,
+  checkTeacherInvite,
+  acceptTeacherInvite,
+} from "./teacherInvites";
+
 // ========================================
 // Environment variables
 // ========================================

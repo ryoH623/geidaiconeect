@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
@@ -13,6 +13,16 @@ const GUARDIAN_RELATIONSHIPS = ["父", "母", "祖父", "祖母", "その他の�
 
 const Register: React.FC = () => {
   const navigate = useNavigate();
+
+  // 講師の招待URL（/register?invite=...）から来た場合。
+  // role: teacher の付与は Functions 側で行う。ここでは表示の出し分けと、
+  // 登録直後に acceptTeacherInvite を呼ぶかどうかの判断にだけ使う。
+  const [searchParams] = useSearchParams();
+  const inviteToken = (searchParams.get("invite") || "").trim();
+  const [inviteChecking, setInviteChecking] = useState(!!inviteToken);
+  const [inviteValid, setInviteValid] = useState(false);
+  const [inviteName, setInviteName] = useState("");
+  const [inviteMessage, setInviteMessage] = useState("");
 
   // 基本
   const [email, setEmail] = useState("");
@@ -50,6 +60,39 @@ const Register: React.FC = () => {
   // 状態
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // 招待URLの有効性を先に確かめる。無効なまま登録させると、
+  // 生徒として登録された後に「講師になれない」と分かることになる。
+  useEffect(() => {
+    if (!inviteToken) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const check = httpsCallable<
+          { token: string },
+          { ok: boolean; valid: boolean; name: string; message: string }
+        >(functions, "checkTeacherInvite");
+        const res = await check({ token: inviteToken });
+        if (cancelled) return;
+        setInviteValid(res.data.valid);
+        setInviteName(res.data.name || "");
+        setInviteMessage(res.data.message || "");
+      } catch (err) {
+        console.error("[register] 招待の確認に失敗:", err);
+        if (!cancelled) {
+          setInviteValid(false);
+          setInviteMessage("招待URLの確認に失敗しました。時間をおいてお試しください。");
+        }
+      } finally {
+        if (!cancelled) setInviteChecking(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [inviteToken]);
 
   // 郵便番号検索のローディング
   const [isSearchingZip, setIsSearchingZip] = useState(false);
@@ -220,7 +263,28 @@ const Register: React.FC = () => {
         }
       }
 
-      // 5) 検証メールは Functions の onCreate で自動送信されるため、
+      // 5) 講師の招待から来た場合はここで受理する。
+      //    role を teacher に変え、講師プロフィールの下書きを作って authUid を紐付ける。
+      //    ここが失敗すると生徒のまま残ってしまうので、明確にエラーを出す
+      //    （アカウント自体は作成済みなので、運営が招待を出し直せば復帰できる）。
+      if (inviteToken && inviteValid) {
+        try {
+          const accept = httpsCallable<{ token: string }, { ok: boolean; teacherId: string }>(
+            functions,
+            "acceptTeacherInvite"
+          );
+          await accept({ token: inviteToken });
+        } catch (inviteErr: any) {
+          console.error("[register] 招待の受理に失敗:", inviteErr);
+          setError(
+            "会員登録は完了しましたが、講師としての設定に失敗しました。運営にお問い合わせください。"
+          );
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      // 6) 検証メールは Functions の onCreate で自動送信されるため、
       //    フロントから sendVerifyEmail は呼ばない
 
       setError(null);
@@ -250,7 +314,39 @@ const Register: React.FC = () => {
   return (
     <div className="register-container register-page">
       <div className="register-box">
-        <h2>新規会員登録</h2>
+        <h2>{inviteToken && inviteValid ? "講師の新規会員登録" : "新規会員登録"}</h2>
+
+        {/* 招待URLから来た場合の案内。無効なら生徒登録になることを明示する */}
+        {inviteToken && (
+          <div
+            style={{
+              border: "1px solid #ddd",
+              borderRadius: 8,
+              padding: "12px 16px",
+              margin: "1rem 0",
+              background: inviteValid ? "#f3f7f1" : "#fff6f6",
+              lineHeight: 1.8,
+            }}
+          >
+            {inviteChecking ? (
+              <p style={{ margin: 0 }}>招待URLを確認しています…</p>
+            ) : inviteValid ? (
+              <p style={{ margin: 0 }}>
+                {inviteName && <strong>{inviteName} 様</strong>}
+                {inviteName && <br />}
+                講師としてご登録いただけます。登録後、マイページからレッスンコースを
+                作成してください。内容を運営で確認のうえ公開します。
+              </p>
+            ) : (
+              <p style={{ margin: 0, color: "#c62828" }}>
+                {inviteMessage || "この招待URLは利用できません。"}
+                <br />
+                このまま登録すると<strong>生徒アカウント</strong>になります。
+              </p>
+            )}
+          </div>
+        )}
+
         <p className="required-note"><span className="req">*</span>は入力必須項目です。</p>
 
         <form onSubmit={handleSubmit} className="register-form form-grid">

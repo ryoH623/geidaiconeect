@@ -7,7 +7,8 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "../../firebase";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "../../firebase";
 import {
   TEACHER_PROFILES,
   fetchAllTeachers,
@@ -31,6 +32,56 @@ const AdminTeacherProfiles: React.FC = () => {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState("");
+
+  // 招待の発行。面談を終えた講師にこのURLを送る
+  const [inviteName, setInviteName] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteSlug, setInviteSlug] = useState("");
+  const [inviteUrl, setInviteUrl] = useState("");
+  const [inviteExpiry, setInviteExpiry] = useState("");
+  const [inviteError, setInviteError] = useState("");
+  const [inviting, setInviting] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const createInvite = async () => {
+    setInviteError("");
+    setInviteUrl("");
+    setCopied(false);
+
+    try {
+      setInviting(true);
+      const callable = httpsCallable<
+        { name: string; email: string; teacherId: string },
+        { ok: boolean; token: string; url: string; expiresAt: string }
+      >(functions, "adminCreateTeacherInvite");
+      const res = await callable({
+        name: inviteName.trim(),
+        email: inviteEmail.trim(),
+        teacherId: inviteSlug.trim(),
+      });
+      // 相手に送るのは絶対URL。相対パスのままでは使えない
+      setInviteUrl(`${window.location.origin}${res.data.url}`);
+      setInviteExpiry(new Date(res.data.expiresAt).toLocaleDateString());
+      setInviteName("");
+      setInviteEmail("");
+      setInviteSlug("");
+    } catch (err: any) {
+      console.error("招待の発行に失敗しました:", err);
+      setInviteError(err?.message || "招待の発行に失敗しました。");
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const copyInviteUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setInviteError("コピーできませんでした。URLを選択してコピーしてください。");
+    }
+  };
 
   const reload = async () => {
     try {
@@ -182,6 +233,88 @@ const AdminTeacherProfiles: React.FC = () => {
           講師が登録した内容は、ここで公開操作をするまでサイトに出ません。
           料金の桁や本文を確認してから公開してください。
         </p>
+
+        {/* 招待URLの発行 */}
+        <section
+          style={{
+            border: "1px solid #ddd",
+            borderRadius: 10,
+            padding: "16px",
+            margin: "1.5rem 0",
+            background: "#fff",
+          }}
+        >
+          <h3 style={{ marginTop: 0 }}>講師を招待する</h3>
+          <p style={{ fontSize: "0.9rem", color: "#666", lineHeight: 1.8 }}>
+            面談を終えた講師にこのURLを送ってください。
+            このURLから会員登録した方だけが講師になります。
+            有効期限は14日、1回使うと無効になります。
+          </p>
+
+          <div style={{ display: "grid", gap: 10, maxWidth: 420 }}>
+            <input
+              type="text"
+              placeholder="講師名（例: 印田 陽介）"
+              value={inviteName}
+              onChange={(e) => setInviteName(e.target.value)}
+              style={{ padding: "8px 12px", borderRadius: 6 }}
+            />
+            <input
+              type="email"
+              placeholder="メールアドレス（任意・記録用）"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              style={{ padding: "8px 12px", borderRadius: 6 }}
+            />
+            <input
+              type="text"
+              placeholder="講師ページのURL（英数字・例: yosuke-inda）"
+              value={inviteSlug}
+              onChange={(e) => setInviteSlug(e.target.value)}
+              style={{ padding: "8px 12px", borderRadius: 6 }}
+            />
+            <button
+              type="button"
+              className="form-button"
+              onClick={createInvite}
+              disabled={inviting || !inviteName.trim() || !inviteSlug.trim()}
+            >
+              {inviting ? "発行中..." : "招待URLを発行する"}
+            </button>
+          </div>
+
+          {inviteError && (
+            <p style={{ color: "#c62828", marginTop: "0.75rem" }}>{inviteError}</p>
+          )}
+
+          {inviteUrl && (
+            <div style={{ marginTop: "1rem" }}>
+              <p style={{ fontSize: "0.85rem", color: "#666", marginBottom: 4 }}>
+                有効期限: {inviteExpiry}（このURLは一度しか使えません）
+              </p>
+              <code
+                style={{
+                  display: "block",
+                  wordBreak: "break-all",
+                  background: "#faf8f4",
+                  border: "1px solid #e5e0d5",
+                  borderRadius: 6,
+                  padding: "10px 12px",
+                }}
+              >
+                {inviteUrl}
+              </code>
+              <button
+                type="button"
+                className="form-button"
+                onClick={copyInviteUrl}
+                style={{ marginTop: "0.5rem" }}
+              >
+                {copied ? "コピーしました" : "URLをコピー"}
+              </button>
+            </div>
+          )}
+        </section>
 
         <div style={{ margin: "1.5rem 0" }}>
           <button
