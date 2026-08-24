@@ -119,6 +119,7 @@ export const saveMyTeacherProfile = https.onCall(
       courses?: CourseInput[];
       onlineAvailable?: boolean;
       onlineLessonPrice?: number;
+      travelRange?: string;
       submit?: boolean;
     },
     context
@@ -195,6 +196,10 @@ export const saveMyTeacherProfile = https.onCall(
       tags: strArray(data?.tags, 10, 30),
       profile: str(data?.profile, 2000),
       courses,
+      // 出張コースが無ければ範囲は意味を持たないので保存しない
+      travelRange: courses.some((c) => c.type === "出張")
+        ? str(data?.travelRange, 100)
+        : "",
       onlineAvailable,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };

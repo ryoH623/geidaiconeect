@@ -1,13 +1,12 @@
 // src/pages/TeacherRecruit.tsx
 // 講師募集ページ。上部にサービス利用のメリット紹介、下部に応募フォーム。
 // 送信は callable（submitTeacherApplication）経由で Firestore 保存＋運営宛メール送信。
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "../firebase";
 import BudouxText from "../components/BudouxText";
 import { subjects } from "../data/subjects";
-import type { LessonType } from "../data/teachers";
 import AddressCascadeSelect, {
   EMPTY_ADDRESS,
   type AddressValue,
@@ -22,23 +21,8 @@ interface TeacherApplicationPayload {
   address: { prefecture: string; city: string; town: string; line: string };
   subject: string;
   graduationYear: number;
-  homeLessonAvailable: boolean;
-  lessonTypes: LessonType[];
-  travelRange: string;
   bio: string;
 }
-
-const LESSON_TYPES: LessonType[] = ["自宅", "スタジオ", "出張", "オンライン"];
-
-/** 出張可能範囲（自宅からの距離・時間）の選択肢 */
-const TRAVEL_RANGES = [
-  "自宅から15分以内",
-  "自宅から30分以内",
-  "自宅から1時間以内",
-  "自宅から5km以内",
-  "自宅から10km以内",
-  "自宅から20km以内",
-] as const;
 
 const CURRENT_YEAR = new Date().getFullYear();
 const GRADUATION_YEARS = Array.from(
@@ -83,33 +67,12 @@ const TeacherRecruit: React.FC = () => {
   const [addressLine, setAddressLine] = useState("");
   const [subject, setSubject] = useState("");
   const [graduationYear, setGraduationYear] = useState("");
-  const [homeLesson, setHomeLesson] = useState<"" | "yes" | "no">("");
-  const [lessonTypes, setLessonTypes] = useState<LessonType[]>([]);
-  const [travelRange, setTravelRange] = useState("");
   const [bio, setBio] = useState("");
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [submitError, setSubmitError] = useState("");
-
-  const wantsTravelLesson = lessonTypes.includes("出張");
-  // 自宅レッスン不可なら「自宅」形態は選べない
-  const homeLessonDisabled = homeLesson === "no";
-
-  // 自宅レッスン不可に切り替えたら、選択済みの「自宅」形態を解除する
-  useEffect(() => {
-    if (homeLesson === "no") {
-      setLessonTypes((prev) => prev.filter((t) => t !== "自宅"));
-    }
-  }, [homeLesson]);
-
-  const toggleLessonType = (type: LessonType) => {
-    if (type === "自宅" && homeLessonDisabled) return;
-    setLessonTypes((prev) =>
-      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
-    );
-  };
 
   const validate = (): Record<string, string> => {
     const next: Record<string, string> = {};
@@ -126,11 +89,6 @@ const TeacherRecruit: React.FC = () => {
     if (!addressLine.trim()) next.addressLine = "番地・建物名等を入力してください。";
     if (!subject) next.subject = "専攻を選択してください。";
     if (!graduationYear) next.graduationYear = "卒業・修了年を選択してください。";
-    if (!homeLesson) next.homeLesson = "自宅レッスンの可否を選択してください。";
-    if (lessonTypes.length === 0)
-      next.lessonTypes = "希望レッスン形態を1つ以上選択してください。";
-    if (wantsTravelLesson && !travelRange)
-      next.travelRange = "出張可能な範囲を選択してください。";
     if (!bio.trim()) next.bio = "経歴・自己PRを入力してください。";
     else if (bio.length > 2000) next.bio = "経歴・自己PRは2000文字以内で入力してください。";
     return next;
@@ -164,9 +122,6 @@ const TeacherRecruit: React.FC = () => {
         },
         subject,
         graduationYear: Number(graduationYear),
-        homeLessonAvailable: homeLesson === "yes",
-        lessonTypes,
-        travelRange: wantsTravelLesson ? travelRange : "",
         bio: bio.trim(),
       });
 
@@ -364,92 +319,6 @@ const TeacherRecruit: React.FC = () => {
                   {errors.graduationYear && (
                     <p className="form-error">{errors.graduationYear}</p>
                   )}
-                </div>
-
-                <div className="form-group" style={{ marginBottom: "1rem" }}>
-                  <span>自宅レッスンの可否{requiredMark}</span>
-                  <div style={{ display: "flex", gap: "1.5rem", marginTop: "0.4rem" }}>
-                    <label style={{ fontWeight: "normal" }}>
-                      <input
-                        type="radio"
-                        name="homeLesson"
-                        value="yes"
-                        checked={homeLesson === "yes"}
-                        onChange={() => setHomeLesson("yes")}
-                      />{" "}
-                      可（自宅でレッスンできる）
-                    </label>
-                    <label style={{ fontWeight: "normal" }}>
-                      <input
-                        type="radio"
-                        name="homeLesson"
-                        value="no"
-                        checked={homeLesson === "no"}
-                        onChange={() => setHomeLesson("no")}
-                      />{" "}
-                      不可
-                    </label>
-                  </div>
-                  {errors.homeLesson && <p className="form-error">{errors.homeLesson}</p>}
-                </div>
-
-                <div className="form-group" style={{ marginBottom: "1rem" }}>
-                  <span>希望レッスン形態{requiredMark}</span>
-                  <div style={{ display: "flex", gap: "1.5rem", marginTop: "0.4rem" }}>
-                    {LESSON_TYPES.map((type) => {
-                      const disabled = type === "自宅" && homeLessonDisabled;
-                      return (
-                        <label
-                          key={type}
-                          style={{
-                            fontWeight: "normal",
-                            color: disabled ? "#aaa" : undefined,
-                            cursor: disabled ? "not-allowed" : "pointer",
-                          }}
-                          title={
-                            disabled
-                              ? "自宅レッスンを「不可」にしているため選択できません"
-                              : undefined
-                          }
-                        >
-                          <input
-                            type="checkbox"
-                            checked={lessonTypes.includes(type)}
-                            onChange={() => toggleLessonType(type)}
-                            disabled={disabled}
-                          />{" "}
-                          {type}
-                        </label>
-                      );
-                    })}
-                  </div>
-                  {errors.lessonTypes && <p className="form-error">{errors.lessonTypes}</p>}
-                </div>
-
-                <div className="form-group" style={{ marginBottom: "1rem" }}>
-                  <label htmlFor="recruit-travel-range">
-                    出張可能な範囲
-                    {wantsTravelLesson && requiredMark}
-                  </label>
-                  <p style={{ fontSize: "0.85rem", color: "#666", margin: "0.2rem 0 0.4rem" }}>
-                    ご自宅を起点に、出張レッスンが可能な範囲の目安を選択してください。
-                  </p>
-                  <select
-                    id="recruit-travel-range"
-                    className="form-input"
-                    value={travelRange}
-                    onChange={(e) => setTravelRange(e.target.value)}
-                    disabled={!wantsTravelLesson}
-                    style={{ width: "100%" }}
-                  >
-                    <option value="">選択してください</option>
-                    {TRAVEL_RANGES.map((range) => (
-                      <option key={range} value={range}>
-                        {range}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.travelRange && <p className="form-error">{errors.travelRange}</p>}
                 </div>
 
                 <div className="form-group" style={{ marginBottom: "1.5rem" }}>

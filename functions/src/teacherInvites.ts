@@ -158,11 +158,6 @@ export const adminCreateTeacherInvite = https.onCall(
       line: str(addr.line, 200),
       subject: str(application?.subject, 50),
       bio: str(application?.bio, 2000),
-      lessonTypes: Array.isArray(application?.lessonTypes)
-        ? (application.lessonTypes as unknown[])
-            .filter((x): x is string => typeof x === "string")
-            .slice(0, 10)
-        : [],
     };
 
     await db.collection(INVITES).doc(token).set({
@@ -352,10 +347,8 @@ export const acceptTeacherInvite = https.onCall(
         // 下書きを作る。公開されるのは運営が公開操作をした後
         // 応募フォームの内容をそのまま下書きに写す。
         // 講師が同じことを三度目に入力しなくて済むようにする。
+        // レッスン形態はプロフィール側で設定するため、ここでは引き継がない。
         const prefill = (invite.prefill || {}) as Record<string, unknown>;
-        const lessonTypes = Array.isArray(prefill.lessonTypes)
-          ? (prefill.lessonTypes as string[])
-          : [];
         const subject = String(prefill.subject || "");
 
         tx.set(profileRef, {
@@ -369,7 +362,7 @@ export const acceptTeacherInvite = https.onCall(
           profile: String(prefill.bio || ""),
           photo: "",
           courses: [],
-          onlineAvailable: lessonTypes.includes("オンライン"),
+          onlineAvailable: false,
           published: false,
           status: "draft",
           createdAt: admin.firestore.FieldValue.serverTimestamp(),

@@ -14,6 +14,7 @@ import { functions } from "../../firebase";
 import { useAuth } from "../../contexts/AuthContext";
 import {
   MIN_LESSON_PRICE,
+  TRAVEL_RANGES,
   fetchMyTeacherProfile,
   formatPrice,
   type LessonCourse,
@@ -115,6 +116,7 @@ const TeacherProfileForm: React.FC = () => {
   const [courses, setCourses] = useState<CourseDraft[]>([]);
   const [onlineAvailable, setOnlineAvailable] = useState(false);
   const [onlinePrice, setOnlinePrice] = useState("");
+  const [travelRange, setTravelRange] = useState("");
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -148,6 +150,7 @@ const TeacherProfileForm: React.FC = () => {
         setCourses(p.courses.map(toDraft));
         setOnlineAvailable(p.onlineAvailable === true);
         setOnlinePrice(p.onlineLessonPrice ? String(p.onlineLessonPrice) : "");
+        setTravelRange(p.travelRange || "");
       } catch (err) {
         console.error("プロフィールの取得に失敗しました", err);
         if (!cancelled) setLoadError("プロフィールの取得に失敗しました。");
@@ -166,6 +169,9 @@ const TeacherProfileForm: React.FC = () => {
     const pref = prefectures.find((p) => p.name === prefecture);
     return pref ? citiesByPrefecture[pref.code] || [] : [];
   }, [prefecture]);
+
+  // 出張コースがある場合だけ、出張可能な範囲を聞く
+  const hasTravelCourse = courses.some((c) => c.type === "出張");
 
   const toggleIn = (list: string[], value: string): string[] =>
     list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
@@ -202,6 +208,9 @@ const TeacherProfileForm: React.FC = () => {
 
     if (submit && courses.length === 0) {
       return "公開申請にはコースが1件以上必要です。";
+    }
+    if (submit && hasTravelCourse && !travelRange) {
+      return "出張レッスンのコースがあるため、出張可能な範囲を選択してください。";
     }
     return "";
   };
@@ -249,6 +258,7 @@ const TeacherProfileForm: React.FC = () => {
           locationDisplay: c.type === "オンライン" ? "" : c.locationDisplay.trim(),
           isTrial: c.isTrial,
         })),
+        travelRange: hasTravelCourse ? travelRange : "",
         onlineAvailable,
         ...(onlineAvailable && onlinePrice.trim()
           ? { onlineLessonPrice: Number(onlinePrice) }
@@ -600,6 +610,29 @@ const TeacherProfileForm: React.FC = () => {
             コースを追加
           </button>
         </section>
+
+        {/* 出張可能な範囲。出張コースがあるときだけ聞く */}
+        {hasTravelCourse && (
+          <section style={{ marginTop: "2rem" }}>
+            <h3>出張可能な範囲</h3>
+            <p style={{ fontSize: "0.85rem", color: "#666", lineHeight: 1.8 }}>
+              ご自宅を起点に、出張レッスンが可能な範囲の目安を選択してください。
+              講師ページで生徒に案内します。
+            </p>
+            <select
+              value={travelRange}
+              onChange={(e) => setTravelRange(e.target.value)}
+              style={inputStyle}
+            >
+              <option value="">選択してください</option>
+              {TRAVEL_RANGES.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </section>
+        )}
 
         {/* オンライン対応 */}
         <section style={{ marginTop: "2rem" }}>

@@ -274,6 +274,12 @@ const TeacherDetail: React.FC = () => {
                 </tbody>
               </table>
             </form>
+            {/* 出張コースがある場合のみ、どこまで来てもらえるかを示す */}
+            {teacher.travelRange && courses.some((c) => c.type === "出張") && (
+              <p style={{ fontSize: "0.85rem", color: "#8a8270", marginTop: "0.5rem" }}>
+                ※出張レッスンの対応範囲：{teacher.travelRange}
+              </p>
+            )}
             {trialUsed && courses.some((c) => c.isTrial) && (
               <p style={{ fontSize: "0.85rem", color: "#8a8270", marginTop: "0.5rem" }}>
                 ※体験レッスンは1回のみです。受講済みのため一覧に表示していません。

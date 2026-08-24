@@ -3819,8 +3819,6 @@ export const submitRequest = https.onCall(
 // ========================================
 // Callable: 講師応募フォーム送信（未ログインでも可）
 // ========================================
-const LESSON_TYPE_VALUES = ["自宅", "スタジオ", "出張", "オンライン"] as const;
-
 export const submitTeacherApplication = https.onCall(
   async (
     data: {
@@ -3836,9 +3834,6 @@ export const submitTeacherApplication = https.onCall(
       };
       subject?: string;
       graduationYear?: number;
-      homeLessonAvailable?: boolean;
-      lessonTypes?: string[];
-      travelRange?: string;
       bio?: string;
     },
     context
@@ -3858,7 +3853,6 @@ export const submitTeacherApplication = https.onCall(
     const subject = str(data?.subject);
     const bio = str(data?.bio);
     const graduationYear = data?.graduationYear;
-    const homeLessonAvailable = data?.homeLessonAvailable;
 
     if (
       !name ||
@@ -3922,41 +3916,6 @@ export const submitTeacherApplication = https.onCall(
       );
     }
 
-    if (typeof homeLessonAvailable !== "boolean") {
-      throw new https.HttpsError(
-        "invalid-argument",
-        "自宅レッスンの可否を選択してください。"
-      );
-    }
-
-    const lessonTypes = Array.isArray(data?.lessonTypes)
-      ? data.lessonTypes
-      : [];
-    if (
-      lessonTypes.length === 0 ||
-      lessonTypes.some(
-        (t) => !LESSON_TYPE_VALUES.includes(t as (typeof LESSON_TYPE_VALUES)[number])
-      )
-    ) {
-      throw new https.HttpsError(
-        "invalid-argument",
-        "希望レッスン形態を1つ以上選択してください。"
-      );
-    }
-
-    const travelRange = str(data?.travelRange);
-    if (travelRange.length > 100) {
-      throw new https.HttpsError(
-        "invalid-argument",
-        "出張可能な範囲の内容が正しくありません。"
-      );
-    }
-    if (lessonTypes.includes("出張") && !travelRange) {
-      throw new https.HttpsError(
-        "invalid-argument",
-        "出張レッスンを希望する場合は出張可能な範囲を選択してください。"
-      );
-    }
 
     const docRef = await admin
       .firestore()
@@ -3969,9 +3928,6 @@ export const submitTeacherApplication = https.onCall(
         address,
         subject,
         graduationYear,
-        homeLessonAvailable,
-        lessonTypes,
-        travelRange,
         bio,
         userId: context.auth?.uid ?? null,
         status: "new",
@@ -4002,9 +3958,6 @@ export const submitTeacherApplication = https.onCall(
           ],
           ["専攻", subject],
           ["卒業年", `${graduationYear}年`],
-          ["自宅レッスン", homeLessonAvailable ? "可" : "不可"],
-          ["希望レッスン形態", lessonTypes.join("、")],
-          ["出張可能な範囲", travelRange || "なし"],
           ["ユーザーID", context.auth?.uid ?? "未ログイン"],
         ],
         outro: [

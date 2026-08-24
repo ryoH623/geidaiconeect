@@ -29,6 +29,19 @@ export type LessonType = '自宅' | 'スタジオ' | '出張' | 'オンライン
  */
 export const MIN_LESSON_PRICE = 3000;
 
+/**
+ * 出張可能な範囲の選択肢。
+ * 自由入力にすると表記が揺れて生徒が比較できないため、選択式にしている。
+ */
+export const TRAVEL_RANGES = [
+  '自宅から15分以内',
+  '自宅から30分以内',
+  '自宅から1時間以内',
+  '自宅から5km以内',
+  '自宅から10km以内',
+  '自宅から20km以内',
+];
+
 /** 自動追加されるオンラインコースの既定料金 */
 export const DEFAULT_ONLINE_LESSON_PRICE = 5000;
 
@@ -63,6 +76,8 @@ export interface TeacherProfile {
   /** オンライン対応可なら、オンラインコースを自動で足す（getCourses 参照） */
   onlineAvailable?: boolean;
   onlineLessonPrice?: number;
+  /** 出張可能な範囲。出張コースがある場合に講師詳細ページで案内する */
+  travelRange?: string;
   /** サイトに出てよいか。運営の公開操作でのみ true になる */
   published: boolean;
   status: TeacherStatus;
@@ -141,6 +156,7 @@ export function toTeacherProfile(id: string, d: Record<string, unknown>): Teache
     onlineAvailable: d.onlineAvailable === true,
     onlineLessonPrice:
       typeof d.onlineLessonPrice === 'number' ? d.onlineLessonPrice : undefined,
+    travelRange: typeof d.travelRange === 'string' ? d.travelRange : undefined,
     published: d.published === true,
     status: (d.status as TeacherStatus) || 'draft',
   };
