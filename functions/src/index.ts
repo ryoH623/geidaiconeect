@@ -3963,6 +3963,14 @@ export const submitTeacherApplication = https.onCall(
         outro: [
           "―― 経歴・自己PR ――",
           escapeHtml(bio).replace(/\n/g, "<br />"),
+          // 応募を見てすぐ動けるよう、管理画面への導線を置く。
+          // この画面から「この応募から招待」で招待URLを発行できる。
+          `<a href="${APP_URL.value()}/admin/teacher-profiles"` +
+            ` style="display: inline-block; margin-top: 16px; padding: 10px 20px;` +
+            ` background: #b9a06b; color: #fff; text-decoration: none;` +
+            ` border-radius: 6px;">管理画面で確認する</a>`,
+          `<span style="font-size: 12px; color: #666;">` +
+            `※この画面から、応募内容を引き継いだ招待URLを発行できます。</span>`,
         ],
       }),
     });
