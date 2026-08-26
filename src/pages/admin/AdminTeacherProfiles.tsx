@@ -8,6 +8,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   collection,
+  deleteDoc,
   doc,
   getDocs,
   setDoc,
@@ -60,6 +61,33 @@ const AdminTeacherProfiles: React.FC = () => {
     seconds: number;
   };
   const [applications, setApplications] = useState<Application[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  /**
+   * 応募を削除する。検証用の応募や重複を片付けるための操作。
+   * 応募者の連絡先ごと消えて元に戻せないため、名前を出して確認する。
+   */
+  const deleteApplication = async (a: Application) => {
+    if (
+      !window.confirm(
+        `「${a.name || "（名前なし）"}」の応募を削除します。
+連絡先を含めて完全に消え、元に戻せません。よろしいですか？`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setDeletingId(a.id);
+      await deleteDoc(doc(db, "teacherApplications", a.id));
+      setApplications((prev) => prev.filter((x) => x.id !== a.id));
+    } catch (err) {
+      console.error("応募の削除に失敗しました:", err);
+      alert("応募の削除に失敗しました。");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -332,14 +360,31 @@ const AdminTeacherProfiles: React.FC = () => {
                         ` / ${new Date(a.seconds * 1000).toLocaleDateString()}`}
                     </span>
                   </span>
-                  <button
-                    type="button"
-                    className="form-button"
-                    onClick={() => createInvite(a.id)}
-                    disabled={inviting}
-                  >
-                    この応募から招待
-                  </button>
+                  <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="form-button"
+                      onClick={() => createInvite(a.id)}
+                      disabled={inviting || deletingId === a.id}
+                    >
+                      この応募から招待
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteApplication(a)}
+                      disabled={deletingId === a.id}
+                      style={{
+                        border: "1px solid #e0c3c3",
+                        background: "#fff",
+                        color: "#c62828",
+                        borderRadius: 6,
+                        padding: "0 16px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {deletingId === a.id ? "削除中..." : "削除"}
+                    </button>
+                  </span>
                 </div>
               ))}
             </div>

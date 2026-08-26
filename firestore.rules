@@ -107,7 +107,10 @@ service cloud.firestore {
     // 講師応募。作成は Cloud Functions（Admin SDK）経由のみ
     match /teacherApplications/{applicationId} {
       allow read, update: if isAdmin();
-      allow create, delete: if false;
+      // 作成は Cloud Functions（submitTeacherApplication）経由のみ。
+      // 削除は運営に許す。検証用の応募や重複を管理画面から片付けられるようにするため。
+      allow create: if false;
+      allow delete: if isAdmin();
     }
 
     // 演奏・展示などの依頼。作成は Cloud Functions（Admin SDK）経由のみ
