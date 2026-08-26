@@ -7,6 +7,7 @@ import { httpsCallable } from "firebase/functions";
 import { functions } from "../firebase";
 import BudouxText from "../components/BudouxText";
 import { subjects } from "../data/subjects";
+import { ADULT_AGE, calcAge, isValidBirthday } from "../lib/age";
 import AddressCascadeSelect, {
   EMPTY_ADDRESS,
   type AddressValue,
@@ -18,6 +19,9 @@ interface TeacherApplicationPayload {
   furigana: string;
   email: string;
   phone: string;
+  postalCode: string;
+  gender: string;
+  birthday: { year: string; month: string; day: string };
   address: { prefecture: string; city: string; town: string; line: string };
   subject: string;
   graduationYear: number;
@@ -25,6 +29,20 @@ interface TeacherApplicationPayload {
 }
 
 const CURRENT_YEAR = new Date().getFullYear();
+/** 生年月日の選択肢。会員登録画面（Register.tsx）と同じ範囲にそろえる */
+const BIRTH_YEARS = Array.from(
+  { length: new Date().getFullYear() - 1940 + 1 },
+  (_, i) => String(1940 + i)
+).reverse();
+const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0"));
+const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, "0"));
+
+const GENDERS = [
+  { value: "male", label: "男性" },
+  { value: "female", label: "女性" },
+  { value: "other", label: "その他・回答しない" },
+];
+
 const GRADUATION_YEARS = Array.from(
   { length: CURRENT_YEAR - 1960 + 1 },
   (_, i) => CURRENT_YEAR - i
@@ -63,6 +81,11 @@ const TeacherRecruit: React.FC = () => {
   const [furigana, setFurigana] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [gender, setGender] = useState("");
+  const [birthY, setBirthY] = useState("");
+  const [birthM, setBirthM] = useState("");
+  const [birthD, setBirthD] = useState("");
   const [address, setAddress] = useState<AddressValue>(EMPTY_ADDRESS);
   const [addressLine, setAddressLine] = useState("");
   const [subject, setSubject] = useState("");
@@ -84,6 +107,20 @@ const TeacherRecruit: React.FC = () => {
       next.email = "メールアドレスの形式が正しくありません。";
     if (!/^\d{10,11}$/.test(phone.replace(/[-\s　]/g, "")))
       next.phone = "電話番号は10〜11桁の数字で入力してください。";
+    if (!/^\d{7}$/.test(postalCode.replace(/[-\s　]/g, "")))
+      next.postalCode = "郵便番号は7桁の数字で入力してください。";
+    if (!gender) next.gender = "性別を選択してください。";
+    if (!birthY || !birthM || !birthD) {
+      next.birthday = "生年月日を選択してください。";
+    } else if (!isValidBirthday(birthY, birthM, birthD)) {
+      next.birthday = "生年月日が正しくありません。";
+    } else {
+      // 講師は成人が前提。会員登録側で保護者同意を扱わない作りにしているため、
+      // ここで弾いておかないと登録段階で行き詰まる。
+      const age = calcAge({ year: birthY, month: birthM, day: birthD });
+      if (age !== null && age < ADULT_AGE)
+        next.birthday = `講師のご応募は${ADULT_AGE}歳以上の方に限らせていただいております。`;
+    }
     if (!address.prefecture || !address.city || !address.town)
       next.address = "都道府県・市区町村・町名を選択してください。";
     if (!addressLine.trim()) next.addressLine = "番地・建物名等を入力してください。";
@@ -114,6 +151,9 @@ const TeacherRecruit: React.FC = () => {
         furigana: furigana.trim(),
         email: email.trim(),
         phone: phone.replace(/[-\s　]/g, ""),
+        postalCode: postalCode.replace(/[-\s　]/g, ""),
+        gender,
+        birthday: { year: birthY, month: birthM, day: birthD },
         address: {
           prefecture: address.prefecture,
           city: address.city,
@@ -254,6 +294,91 @@ const TeacherRecruit: React.FC = () => {
                     style={{ width: "100%" }}
                   />
                   {errors.phone && <p className="form-error">{errors.phone}</p>}
+                </div>
+
+                <div className="form-group" style={{ marginBottom: "1rem" }}>
+                  <label htmlFor="recruit-gender">性別{requiredMark}</label>
+                  <select
+                    id="recruit-gender"
+                    className="form-input"
+                    value={gender}
+                    onChange={(e) => setGender(e.target.value)}
+                    style={{ width: "100%" }}
+                  >
+                    <option value="">選択してください</option>
+                    {GENDERS.map((g) => (
+                      <option key={g.value} value={g.value}>
+                        {g.label}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.gender && <p className="form-error">{errors.gender}</p>}
+                </div>
+
+                <div className="form-group" style={{ marginBottom: "1rem" }}>
+                  <span>生年月日{requiredMark}</span>
+                  <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.4rem" }}>
+                    <select
+                      className="form-input"
+                      value={birthY}
+                      onChange={(e) => setBirthY(e.target.value)}
+                      aria-label="生年"
+                      style={{ flex: 1.2 }}
+                    >
+                      <option value="">年</option>
+                      {BIRTH_YEARS.map((y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="form-input"
+                      value={birthM}
+                      onChange={(e) => setBirthM(e.target.value)}
+                      aria-label="生月"
+                      style={{ flex: 1 }}
+                    >
+                      <option value="">月</option>
+                      {MONTHS.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="form-input"
+                      value={birthD}
+                      onChange={(e) => setBirthD(e.target.value)}
+                      aria-label="生日"
+                      style={{ flex: 1 }}
+                    >
+                      <option value="">日</option>
+                      {DAYS.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {errors.birthday && <p className="form-error">{errors.birthday}</p>}
+                </div>
+
+                <div className="form-group" style={{ marginBottom: "1rem" }}>
+                  <label htmlFor="recruit-postal">郵便番号{requiredMark}</label>
+                  <input
+                    id="recruit-postal"
+                    type="text"
+                    inputMode="numeric"
+                    value={postalCode}
+                    onChange={(e) =>
+                      setPostalCode(e.target.value.replace(/[^0-9]/g, "").slice(0, 7))
+                    }
+                    maxLength={7}
+                    placeholder="例）1500031（ハイフンなし）"
+                    style={{ width: "100%" }}
+                  />
+                  {errors.postalCode && <p className="form-error">{errors.postalCode}</p>}
                 </div>
 
                 <div className="form-group" style={{ marginBottom: "1rem" }}>

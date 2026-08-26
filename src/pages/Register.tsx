@@ -103,6 +103,11 @@ const Register: React.FC = () => {
           setLastNameKana((v) => v || kLast || "");
           setFirstNameKana((v) => v || kRest.join("") || "");
           setPhone((v) => v || String(p.phone || ""));
+          setPostalCode((v) => v || String(p.postalCode || ""));
+          setGender((v) => v || ((p.gender || "") as Gender));
+          setBirthY((v) => v || String(p.birthYear || ""));
+          setBirthM((v) => v || String(p.birthMonth || ""));
+          setBirthD((v) => v || String(p.birthDay || ""));
           setPrefecture((v) => v || String(p.prefecture || ""));
           setAddress1((v) => v || [p.city, p.town].filter(Boolean).join(""));
           setAddress2((v) => v || String(p.line || ""));

@@ -3726,6 +3726,9 @@ export const submitTeacherApplication = https.onCall(
       furigana?: string;
       email?: string;
       phone?: string;
+      postalCode?: string;
+      gender?: string;
+      birthday?: { year?: string; month?: string; day?: string };
       address?: {
         prefecture?: string;
         city?: string;
@@ -3744,6 +3747,39 @@ export const submitTeacherApplication = https.onCall(
     const furigana = str(data?.furigana);
     const email = str(data?.email);
     const phone = str(data?.phone);
+    const postalCode = str(data?.postalCode).replace(/[^0-9]/g, "");
+    if (!/^\d{7}$/.test(postalCode)) {
+      throw new https.HttpsError(
+        "invalid-argument",
+        "郵便番号は7桁の数字で入力してください。"
+      );
+    }
+
+    const gender = str(data?.gender);
+    if (!["male", "female", "other"].includes(gender)) {
+      throw new https.HttpsError("invalid-argument", "性別を選択してください。");
+    }
+
+    const birthday = {
+      year: str(data?.birthday?.year),
+      month: str(data?.birthday?.month),
+      day: str(data?.birthday?.day),
+    };
+    const birthDate = new Date(
+      Number(birthday.year),
+      Number(birthday.month) - 1,
+      Number(birthday.day)
+    );
+    if (
+      !birthday.year ||
+      !birthday.month ||
+      !birthday.day ||
+      Number.isNaN(birthDate.getTime()) ||
+      birthDate > new Date()
+    ) {
+      throw new https.HttpsError("invalid-argument", "生年月日が正しくありません。");
+    }
+
     const address = {
       prefecture: str(data?.address?.prefecture),
       city: str(data?.address?.city),
@@ -3825,6 +3861,9 @@ export const submitTeacherApplication = https.onCall(
         furigana,
         email,
         phone,
+        postalCode,
+        gender,
+        birthday,
         address,
         subject,
         graduationYear,
@@ -3852,6 +3891,7 @@ export const submitTeacherApplication = https.onCall(
           ["ふりがな", furigana],
           ["メールアドレス", email],
           ["電話番号", phone],
+          ["生年月日", `${birthday.year}/${birthday.month}/${birthday.day}`],
           [
             "住所",
             `${address.prefecture}${address.city}${address.town} ${address.line}`,
