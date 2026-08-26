@@ -433,23 +433,25 @@ export default function ScheduleForm() {
       try {
         const { startKey, endKey } = buildDateKeysInMonth(monthDate);
         const schedulesRef = collection(db, SCHEDULES_COLLECTION);
-        const q = query(
-          schedulesRef,
-          where("teacherId", "==", uid),
-          where("date", ">=", startKey),
-          where("date", "<=", endKey)
-        );
+        // 等価条件だけで取得し、月の絞り込みはメモリ上で行う。
+        // 等価条件に範囲条件（date >= / <=）を混ぜると複合インデックスが必要になり、
+        // このプロジェクトは firestore.indexes.json を管理していないため必ず失敗する。
+        const q = query(schedulesRef, where("teacherId", "==", uid));
 
         const snapshot = await getDocs(q);
+        const docsInMonth = snapshot.docs.filter((docSnap) => {
+          const date = docSnap.data()?.date;
+          return typeof date === "string" && date >= startKey && date <= endKey;
+        });
 
-        const dates = snapshot.docs
+        const dates = docsInMonth
           .map((docSnap) => docSnap.data()?.date)
           .filter((date): date is string => typeof date === "string");
 
         setRegisteredDates(uniqueSorted(dates));
 
         const summaryMap: RegisteredSummaryMap = {};
-        snapshot.docs.forEach((docSnap) => {
+        docsInMonth.forEach((docSnap) => {
           const data = docSnap.data();
           const date = typeof data.date === "string" ? data.date : "";
           const lessonMethods = Array.isArray(data.lessonMethods)
