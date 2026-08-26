@@ -324,7 +324,9 @@ const Register: React.FC = () => {
       setError(null);
 
       // メール確認案内ページへ遷移（再送用にメールアドレスを渡す）
-      navigate("/verify-email", { state: { email } });
+      // 講師は登録後にやることが違う（プロフィールとコースの登録）。
+      // 案内ページで出し分けるため、講師登録かどうかを渡す。
+      navigate("/verify-email", { state: { email, isTeacher: isTeacherSignup } });
     } catch (err: any) {
       console.error("[register] failed:", err?.code, err?.message, err);
       const code = err?.code || "";

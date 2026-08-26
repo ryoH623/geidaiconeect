@@ -22,6 +22,11 @@ export default function VerifyEmailNotice() {
       : "";
   const email = emailFromState || auth.currentUser?.email || "";
 
+  // 講師登録から来た場合は、次にやること（プロフィールとコースの登録）を案内する。
+  // ここを出し分けないと、生徒向けの案内だけを見て何をすべきか分からない。
+  const isTeacher =
+    (location.state as { isTeacher?: boolean } | null)?.isTeacher === true;
+
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "already" | "error">("idle");
   const [message, setMessage] = useState("");
 
@@ -85,6 +90,26 @@ export default function VerifyEmailNotice() {
           <Link to="/login" className="login-link"> ログイン </Link>
           できます。
         </p>
+
+        {isTeacher && (
+          <div
+            style={{
+              background: "#f7f3ea",
+              border: "1px solid #e9dfc9",
+              borderRadius: 8,
+              padding: "16px",
+              marginBottom: "1.5rem",
+              lineHeight: 1.9,
+            }}
+          >
+            <strong>ご登録後の流れ</strong>
+            <ol style={{ margin: "0.5rem 0 0", paddingLeft: "1.2rem" }}>
+              <li>ログイン後、プロフィールとレッスンコースをご登録ください。</li>
+              <li>「公開を申請する」を押すと、運営が内容を確認します。</li>
+              <li>確認後、講師ページを公開します。</li>
+            </ol>
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
           <button

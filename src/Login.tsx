@@ -7,7 +7,8 @@ import {
   User,
   sendPasswordResetEmail,
 } from "firebase/auth";
-import { auth } from "./firebase";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "./firebase";
 import "./index.css";
 
 const Login: React.FC = () => {
@@ -67,10 +68,26 @@ const Login: React.FC = () => {
     try {
       setLoginLoading(true);
 
-      await signInWithEmailAndPassword(auth, email, password);
+      const cred = await signInWithEmailAndPassword(auth, email, password);
 
-      const redirectTo =
-        (location.state as { from?: string } | null)?.from || "/";
+      const from = (location.state as { from?: string } | null)?.from;
+      if (from) {
+        navigate(from);
+        return;
+      }
+
+      // 講師はトップページ（生徒向け）ではなく、自分の作業場所へ送る。
+      // AuthContext のロールはまだ読めていないので、ここで直接引く。
+      let redirectTo = "/";
+      try {
+        const snap = await getDoc(doc(db, "users", cred.user.uid));
+        const role = snap.exists() ? String(snap.data()?.role || "") : "";
+        if (role === "teacher") redirectTo = "/teacher/profile";
+        else if (role === "admin") redirectTo = "/admin";
+      } catch (roleErr) {
+        // ロールが引けなくてもログイン自体は成立している。トップへ送る。
+        console.error("ロールの取得に失敗しました:", roleErr);
+      }
 
       navigate(redirectTo);
     } catch (err) {
