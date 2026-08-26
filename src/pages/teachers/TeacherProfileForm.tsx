@@ -350,6 +350,11 @@ const TeacherProfileForm: React.FC = () => {
     padding: "8px 12px",
     borderRadius: 6,
     border: "1px solid #ddd",
+    // このプロジェクトには全体の box-sizing 指定が無い。
+    // 付けないと width:100% に padding と border が加算されて右にはみ出す。
+    boxSizing: "border-box",
+    // ラベル内で改行させるため。inline 要素のままだと入力欄が見出しの右に並ぶ
+    display: "block",
   };
 
   return (

@@ -926,15 +926,6 @@ a[href^="mailto"] {
   font-weight: bold;
 }
 
-/* 長い見出しを1行に収める。
-   1.5rem 固定だと「プロフィール・コースの登録」のような長い見出しが
-   スマホ幅で「…の登／録」と語の途中で折り返してしまう。
-   画面幅に応じて字を詰め、必ず1行で出す。 */
-.heading-oneline span {
-  white-space: nowrap;
-  font-size: clamp(1.02rem, 5vw, 1.5rem);
-}
-
 .no-about-section {
   border-left: none !important;
   padding-left: 0 !important;
@@ -4558,6 +4549,15 @@ body {
   padding-left: 0;
   font-size: 1.8rem;
   font-weight: bold;
+}
+
+/* 長い見出しを1行に収める。
+   1.8rem 固定では「プロフィール・コースの登録」がスマホ幅を超えて右に見切れ、
+   中央にも見えなくなる。画面幅に応じて字を詰め、必ず1行かつ中央に収める。
+   上の .centered-heading-with-border span より後ろに置いて font-size を上書きする。 */
+.centered-heading-with-border.heading-oneline span {
+  white-space: nowrap;
+  font-size: clamp(1.05rem, 5.6vw, 1.8rem);
 }
 
 /* --- 利用規約タイトル（.about-section h2 の左縦線を上書き）--- */
