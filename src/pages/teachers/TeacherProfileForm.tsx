@@ -7,10 +7,11 @@
 //
 // 保存は callable（saveMyTeacherProfile）経由。published はここから変えられず、
 // 公開するかどうかは運営が決める。
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { httpsCallable } from "firebase/functions";
-import { functions } from "../../firebase";
+import { doc, getDoc } from "firebase/firestore";
+import { db, functions } from "../../firebase";
 import { useAuth } from "../../contexts/AuthContext";
 import {
   MIN_LESSON_PRICE,
@@ -21,9 +22,6 @@ import {
   type LessonType,
   type TeacherProfile,
 } from "../../lib/teacherProfiles";
-import { prefectures } from "../../data/prefectures";
-import { citiesByPrefecture } from "../../data/citiesByPrefecture";
-import { subjects } from "../../data/subjects";
 
 const LESSON_TYPES: LessonType[] = ["自宅", "スタジオ", "出張", "オンライン"];
 
@@ -110,6 +108,13 @@ const TeacherProfileForm: React.FC = () => {
   const [furigana, setFurigana] = useState("");
   const [prefecture, setPrefecture] = useState("");
   const [city, setCity] = useState("");
+  // 郵便番号と番地は users/{uid}（本人と運営だけが読める）に保存する。
+  // teacherProfiles は公開中だと誰でも読めるため、自宅の番地を置くと外から見えてしまう。
+  const [postalCode, setPostalCode] = useState("");
+  const [town, setTown] = useState("");
+  const [addressLine, setAddressLine] = useState("");
+  const [zipSearching, setZipSearching] = useState(false);
+  const [zipError, setZipError] = useState("");
   const [genres, setGenres] = useState<string[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [bio, setBio] = useState("");
@@ -141,6 +146,18 @@ const TeacherProfileForm: React.FC = () => {
 
         setProfile(p);
         setName(p.name);
+        // 郵便番号と番地は users 側にある（公開される teacherProfiles には置かない）
+        try {
+          const meSnap = await getDoc(doc(db, "users", user.uid));
+          const me = meSnap.exists() ? meSnap.data() : {};
+          if (!cancelled) {
+            setPostalCode(String(me?.postalCode || ""));
+            setTown(String(me?.address1 || ""));
+            setAddressLine(String(me?.address2 || ""));
+          }
+        } catch (meErr) {
+          console.error("会員情報の取得に失敗しました", meErr);
+        }
         setFurigana(p.furigana);
         setPrefecture(p.prefecture);
         setCity(p.city);
@@ -164,11 +181,36 @@ const TeacherProfileForm: React.FC = () => {
     };
   }, [user]);
 
-  // 市区町村の候補は都道府県に連動させる
-  const cityOptions = useMemo(() => {
-    const pref = prefectures.find((p) => p.name === prefecture);
-    return pref ? citiesByPrefecture[pref.code] || [] : [];
-  }, [prefecture]);
+  /**
+   * 郵便番号から住所を引く。会員登録・会員情報の画面と同じ zipcloud を使う。
+   * 都道府県と市区町村は検索の絞り込みに使うため、ここで自動的に埋める。
+   */
+  const lookupPostalCode = async (code: string) => {
+    const digits = code.replace(/[^0-9]/g, "");
+    if (digits.length !== 7) return;
+
+    try {
+      setZipSearching(true);
+      setZipError("");
+      const res = await fetch(
+        `https://zipcloud.ibsnet.co.jp/api/search?zipcode=${digits}`
+      );
+      const data: any = await res.json();
+      const hit = data?.results?.[0];
+      if (!hit) {
+        setZipError("この郵便番号の住所が見つかりませんでした。");
+        return;
+      }
+      setPrefecture(hit.address1 || "");
+      setCity(hit.address2 || "");
+      setTown(hit.address3 || "");
+    } catch (err) {
+      console.error("住所の検索に失敗しました", err);
+      setZipError("住所の検索に失敗しました。");
+    } finally {
+      setZipSearching(false);
+    }
+  };
 
   // 出張コースがある場合だけ、出張可能な範囲を聞く
   const hasTravelCourse = courses.some((c) => c.type === "出張");
@@ -246,6 +288,9 @@ const TeacherProfileForm: React.FC = () => {
         furigana: furigana.trim(),
         prefecture,
         city,
+        postalCode,
+        town,
+        addressLine,
         genres,
         tags,
         profile: bio.trim(),
@@ -309,7 +354,7 @@ const TeacherProfileForm: React.FC = () => {
 
   return (
     <main className="about-section fade-in-up">
-      <h2 className="centered-heading-with-border">
+      <h2 className="centered-heading-with-border heading-oneline">
         <span>プロフィール・コースの登録</span>
       </h2>
 
@@ -348,72 +393,64 @@ const TeacherProfileForm: React.FC = () => {
             </label>
 
             <label>
-              都道府県
-              <select
-                value={prefecture}
+              郵便番号
+              <input
+                type="text"
+                inputMode="numeric"
+                value={postalCode}
                 onChange={(e) => {
-                  setPrefecture(e.target.value);
-                  setCity("");
+                  const v = e.target.value.replace(/[^0-9]/g, "").slice(0, 7);
+                  setPostalCode(v);
+                  if (v.length === 7) lookupPostalCode(v);
                 }}
+                onBlur={() => lookupPostalCode(postalCode)}
+                maxLength={7}
+                placeholder="例）1500031（ハイフンなし）"
                 style={inputStyle}
-              >
-                <option value="">選択してください</option>
-                {prefectures.map((p) => (
-                  <option key={p.code} value={p.name}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              />
+              <span style={{ fontSize: "0.8rem", color: "#666" }}>
+                {zipSearching
+                  ? "住所を検索しています…"
+                  : "入力すると住所が自動で入ります。引越された場合はここを変更してください。"}
+              </span>
+              {zipError && (
+                <span style={{ fontSize: "0.8rem", color: "#c62828" }}>{zipError}</span>
+              )}
             </label>
 
             <label>
-              市区町村
-              <select
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
+              住所（都道府県・市区町村・町名）
+              <input
+                type="text"
+                value={[prefecture, city, town].filter(Boolean).join("")}
+                readOnly
+                placeholder="郵便番号を入力すると自動で入ります"
+                style={{ ...inputStyle, background: "#f7f5f0" }}
+              />
+              <span style={{ fontSize: "0.8rem", color: "#666" }}>
+                講師ページには都道府県と市区町村までを掲載します。
+              </span>
+            </label>
+
+            <label>
+              番地・建物名
+              <input
+                type="text"
+                value={addressLine}
+                onChange={(e) => setAddressLine(e.target.value)}
+                maxLength={200}
+                placeholder="例）1-2-3 ○○マンション101"
                 style={inputStyle}
-                disabled={cityOptions.length === 0}
-              >
-                <option value="">選択してください</option>
-                {cityOptions.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
+              />
+              <span style={{ fontSize: "0.8rem", color: "#666" }}>
+                こちらは公開されません。運営からのご連絡にのみ使用します。
+              </span>
             </label>
           </div>
         </section>
 
-        {/* ジャンル */}
-        <section style={{ marginTop: "2rem" }}>
-          <h3>指導ジャンル</h3>
-          <p style={{ fontSize: "0.85rem", color: "#666" }}>
-            当てはまるものをすべて選んでください（検索の絞り込みに使われます）。
-          </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {subjects.map((s) => (
-              <label
-                key={s}
-                style={{
-                  border: "1px solid #ddd",
-                  borderRadius: 20,
-                  padding: "4px 12px",
-                  cursor: "pointer",
-                  background: genres.includes(s) ? "#efe9db" : "#fff",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={genres.includes(s)}
-                  onChange={() => setGenres((prev) => toggleIn(prev, s))}
-                  style={{ marginRight: 6 }}
-                />
-                {s}
-              </label>
-            ))}
-          </div>
-        </section>
+        {/* 指導ジャンルは応募時の専攻から引き継がれ、通常は変わらないため画面に出さない。
+            値は保持したまま保存するので、消えることはない。変更が必要なときは運営が対応する。 */}
 
         {/* タグ */}
         <section style={{ marginTop: "2rem" }}>

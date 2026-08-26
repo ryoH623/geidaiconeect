@@ -926,6 +926,15 @@ a[href^="mailto"] {
   font-weight: bold;
 }
 
+/* 長い見出しを1行に収める。
+   1.5rem 固定だと「プロフィール・コースの登録」のような長い見出しが
+   スマホ幅で「…の登／録」と語の途中で折り返してしまう。
+   画面幅に応じて字を詰め、必ず1行で出す。 */
+.heading-oneline span {
+  white-space: nowrap;
+  font-size: clamp(1.02rem, 5vw, 1.5rem);
+}
+
 .no-about-section {
   border-left: none !important;
   padding-left: 0 !important;

@@ -112,6 +112,9 @@ export const saveMyTeacherProfile = https.onCall(
       furigana?: string;
       prefecture?: string;
       city?: string;
+      postalCode?: string;
+      town?: string;
+      addressLine?: string;
       genres?: string[];
       tags?: string[];
       profile?: string;
@@ -215,6 +218,20 @@ export const saveMyTeacherProfile = https.onCall(
     if (submit) update.status = "pending";
 
     await profileRef.update(update);
+
+    // 郵便番号と番地は users 側にだけ保存する。
+    // teacherProfiles は公開中だと誰でも読めるため、自宅の番地を置くと外から見えてしまう。
+    // 公開してよい粒度（都道府県・市区町村）だけを teacherProfiles に持たせている。
+    const postalCode = str(data?.postalCode, 10).replace(/[^0-9]/g, "");
+    const addressUpdate: Record<string, unknown> = {
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    if (postalCode) addressUpdate.postalCode = postalCode;
+    addressUpdate.prefecture = str(data?.prefecture, 20);
+    addressUpdate.address1 = str(data?.town, 100);
+    addressUpdate.address2 = str(data?.addressLine, 200);
+
+    await db.collection("users").doc(uid).set(addressUpdate, { merge: true });
 
     logger.info("saveMyTeacherProfile done", {
       uid,
