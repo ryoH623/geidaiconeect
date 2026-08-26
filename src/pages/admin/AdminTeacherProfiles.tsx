@@ -48,6 +48,7 @@ const AdminTeacherProfiles: React.FC = () => {
   const [inviteUrl, setInviteUrl] = useState("");
   const [inviteExpiry, setInviteExpiry] = useState("");
   const [inviteError, setInviteError] = useState("");
+  const [inviteMailNotice, setInviteMailNotice] = useState("");
   const [inviting, setInviting] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -112,10 +113,19 @@ const AdminTeacherProfiles: React.FC = () => {
     })();
   }, []);
 
-  const createInvite = async (applicationId?: string) => {
+  const createInvite = async (applicationId?: string, mailTo?: string) => {
     setInviteError("");
     setInviteUrl("");
+    setInviteMailNotice("");
     setCopied(false);
+
+    // 発行するとその場で本人にメールが飛ぶ。押し間違いで実在の応募者に
+    // 届いてしまわないよう、宛先を出して確認する。
+    const to = (mailTo || inviteEmail).trim();
+    const message = to
+      ? `${to} 宛に講師登録の招待メールを送ります。よろしいですか？`
+      : "メールアドレスが分からないため、招待URLの発行のみ行います（メールは送られません）。よろしいですか？";
+    if (!window.confirm(message)) return;
 
     try {
       setInviting(true);
@@ -126,7 +136,14 @@ const AdminTeacherProfiles: React.FC = () => {
           teacherId: string;
           applicationId?: string;
         },
-        { ok: boolean; token: string; url: string; expiresAt: string }
+        {
+          ok: boolean;
+          token: string;
+          url: string;
+          expiresAt: string;
+          mailSent: boolean;
+          mailTo: string;
+        }
       >(functions, "adminCreateTeacherInvite");
       const res = await callable({
         name: inviteName.trim(),
@@ -137,6 +154,13 @@ const AdminTeacherProfiles: React.FC = () => {
       // 相手に送るのは絶対URL。相対パスのままでは使えない
       setInviteUrl(`${window.location.origin}${res.data.url}`);
       setInviteExpiry(new Date(res.data.expiresAt).toLocaleDateString());
+      setInviteMailNotice(
+        res.data.mailSent
+          ? `${res.data.mailTo} に招待メールを送信しました。`
+          : res.data.mailTo
+            ? `メールの送信に失敗しました。下のURLをご本人にお送りください。`
+            : "メールアドレスが未登録のため送信していません。下のURLをご本人にお送りください。"
+      );
       setInviteName("");
       setInviteEmail("");
       setInviteSlug("");
@@ -321,7 +345,7 @@ const AdminTeacherProfiles: React.FC = () => {
         >
           <h3 style={{ marginTop: 0 }}>講師を招待する</h3>
           <p style={{ fontSize: "0.9rem", color: "#666", lineHeight: 1.8 }}>
-            面談を終えた講師にこのURLを送ってください。
+            発行すると、その場でご本人に招待メールが届きます。
             このURLから会員登録した方だけが講師になります。
             有効期限は14日、1回使うと無効になります。
           </p>
@@ -334,6 +358,7 @@ const AdminTeacherProfiles: React.FC = () => {
               <p style={{ fontSize: "0.85rem", color: "#666", lineHeight: 1.8 }}>
                 応募フォームの内容（お名前・連絡先・ご住所・ジャンル・自己紹介）が
                 会員登録画面と講師プロフィールに引き継がれます。
+                応募時のメールアドレス宛に、招待メールを自動で送ります。
               </p>
               {applications.map((a) => (
                 <div
@@ -364,7 +389,7 @@ const AdminTeacherProfiles: React.FC = () => {
                     <button
                       type="button"
                       className="form-button"
-                      onClick={() => createInvite(a.id)}
+                      onClick={() => createInvite(a.id, a.email)}
                       disabled={inviting || deletingId === a.id}
                     >
                       この応募から招待
@@ -426,6 +451,12 @@ const AdminTeacherProfiles: React.FC = () => {
 
           {inviteError && (
             <p style={{ color: "#c62828", marginTop: "0.75rem" }}>{inviteError}</p>
+          )}
+
+          {inviteMailNotice && (
+            <p style={{ color: "#2e7d32", marginTop: "0.75rem" }}>
+              {inviteMailNotice}
+            </p>
           )}
 
           {inviteUrl && (

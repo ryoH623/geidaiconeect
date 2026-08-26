@@ -10,6 +10,10 @@
 import * as admin from "firebase-admin";
 import { https } from "firebase-functions/v1";
 import { logger } from "firebase-functions";
+import { defineString } from "firebase-functions/params";
+import { buildInfoMailHtml, escapeHtml, sendMailSafe } from "./mailer";
+
+const APP_URL = defineString("APP_URL");
 
 const INVITES = "teacherInvites";
 const TEACHER_PROFILES = "teacherProfiles";
@@ -99,7 +103,14 @@ export const adminCreateTeacherInvite = https.onCall(
       applicationId?: string;
     },
     context
-  ): Promise<{ ok: boolean; token: string; url: string; expiresAt: string }> => {
+  ): Promise<{
+    ok: boolean;
+    token: string;
+    url: string;
+    expiresAt: string;
+    mailSent: boolean;
+    mailTo: string;
+  }> => {
     await assertAdmin(context.auth?.uid);
 
     const db = admin.firestore();
@@ -175,13 +186,56 @@ export const adminCreateTeacherInvite = https.onCall(
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    logger.info("adminCreateTeacherInvite done", { teacherId, by: context.auth?.uid });
+    const path = `/register?invite=${token}`;
+    const inviteUrl = `${APP_URL.value()}${path}`;
+
+    // 宛先が分かっていれば本人に直接送る。運営が URL を貼り付けて送る手間を省く。
+    // 送信に失敗しても招待自体は有効なので、発行は成功として返し、
+    // 送れたかどうかを呼び出し側に伝えて画面で案内する。
+    let mailSent = false;
+    if (email) {
+      mailSent = await sendMailSafe({
+        to: email,
+        subject: "【Geidai Connect】講師ご登録のご案内",
+        html: buildInfoMailHtml({
+          greetingName: name,
+          intro: [
+            "この度は Geidai Connect にご応募いただき、ありがとうございます。",
+            "面談の結果、講師としてご登録いただけることになりました。",
+            "下記のボタンから会員登録をお願いいたします。",
+          ],
+          rows: [["有効期限", `${expiresAt.toDate().toLocaleDateString("ja-JP")}まで`]],
+          outro: [
+            `<a href="${escapeHtml(inviteUrl)}"` +
+              ` style="display: inline-block; margin: 8px 0 16px; padding: 12px 24px;` +
+              ` background: #b9a06b; color: #fff; text-decoration: none; border-radius: 6px;">` +
+              `講師登録へ進む</a>`,
+            "<span style=\"font-size: 12px; color: #666;\">" +
+              "ボタンが押せない場合は、以下のURLをブラウザに貼り付けてください。</span>",
+            `<span style="word-break: break-all; font-size: 12px;">${escapeHtml(inviteUrl)}</span>`,
+            "<span style=\"font-size: 12px; color: #666;\">" +
+              "※このURLはお一人に一度きり有効です。他の方と共有しないでください。<br />" +
+              "ご登録後、マイページからレッスンコースをご登録いただけます。" +
+              "内容を確認のうえ、こちらで公開いたします。</span>",
+          ],
+        }),
+      });
+    }
+
+    logger.info("adminCreateTeacherInvite done", {
+      teacherId,
+      by: context.auth?.uid,
+      mailSent,
+      hasEmail: !!email,
+    });
 
     return {
       ok: true,
       token,
-      url: `/register?invite=${token}`,
+      url: path,
       expiresAt: expiresAt.toDate().toISOString(),
+      mailSent,
+      mailTo: email,
     };
   }
 );
