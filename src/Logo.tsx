@@ -12,7 +12,7 @@ export default function Header() {
     }}>
       {/* 左：三本線メニュー */}
       <div>
-        <button style={{ fontSize: "24px" }}>☰</button>
+        <button type="button" style={{ fontSize: "24px" }}>☰</button>
       </div>
 
       {/* 中央：ロゴ */}
@@ -22,7 +22,7 @@ export default function Header() {
 
       {/* 右：虫眼鏡 */}
       <div>
-        <button style={{ fontSize: "24px" }}>🔍</button>
+        <button type="button" style={{ fontSize: "24px" }}>🔍</button>
       </div>
     </header>
   );

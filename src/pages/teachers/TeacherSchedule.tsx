@@ -68,7 +68,7 @@ const TeacherSchedule: React.FC = () => {
           </div>
         </div>
 
-        <button onClick={handleSave} style={{ marginTop: '1rem' }}>保存</button>
+        <button type="button" onClick={handleSave} style={{ marginTop: '1rem' }}>保存</button>
       </div>
     </main>
   );

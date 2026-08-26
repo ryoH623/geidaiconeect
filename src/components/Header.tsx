@@ -1,3 +1,6 @@
+// button は type を省略すると既定が submit になる。フォームの中に置かれた瞬間に
+// 意図しない送信（＝ページのリロード）が起きるため、送信目的でないものは
+// すべて type="button" を明示している。
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faMagnifyingGlass, faUser } from '@fortawesome/free-solid-svg-icons';
 import { useState } from "react";
@@ -54,7 +57,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
     <header className="header">
       {/* 左：ハンバーガー + 検索 */}
       <div className="left">
-        <button className="menu-icon" onClick={() => {
+        <button type="button" className="menu-icon" onClick={() => {
           // 検索アイコンと挙動を統一：同じアイコンをもう一度押したら閉じる（トグル）
           if (!menuOpen) onMenuClick?.();
           setMenuOpen(!menuOpen);
@@ -64,7 +67,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
         {menuOpen && (
           <div className="menu-dropdown">
-            <button className="close-icon" onClick={() => setMenuOpen(false)}>✕</button>
+            <button type="button" className="close-icon" onClick={() => setMenuOpen(false)}>✕</button>
             <hr />
             {/* 会員情報・予約履歴は右上の人型アイコン→マイページに集約 */}
             <Link to="/faq" onClick={() => setMenuOpen(false)}>よくあるご質問</Link>
@@ -97,13 +100,13 @@ export default function Header({ onMenuClick }: HeaderProps) {
           </div>
         )}
 
-        <button className="search-icon" onClick={() => setSearchOpen(!searchOpen)}>
+        <button type="button" className="search-icon" onClick={() => setSearchOpen(!searchOpen)}>
           <FontAwesomeIcon icon={faMagnifyingGlass} />
         </button>
 
         {searchOpen && (
           <div className="search-dropdown">
-            <button className="close-icon" onClick={() => setSearchOpen(false)}>✕</button>
+            <button type="button" className="close-icon" onClick={() => setSearchOpen(false)}>✕</button>
             <div className="search-form">
               <input
                 type="text"
@@ -129,8 +132,8 @@ export default function Header({ onMenuClick }: HeaderProps) {
                 <option value="日本画">日本画</option>
                 <option value="油絵">油絵</option>
               </select>
-              <button onClick={handleReset}>リセット</button>
-              <button onClick={handleSearch}>絞り込み</button>
+              <button type="button" onClick={handleReset}>リセット</button>
+              <button type="button" onClick={handleSearch}>絞り込み</button>
             </div>
           </div>
         )}
@@ -149,7 +152,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
       {/* 右：マイページアイコン */}
       <div className="right">
-        <button className="profile-icon" onClick={handleProfileClick}>
+        <button type="button" className="profile-icon" onClick={handleProfileClick}>
           <FontAwesomeIcon icon={faUser} />
         </button>
       </div>

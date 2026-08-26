@@ -52,7 +52,7 @@ const TestCheckoutPage: React.FC = () => {
         <p><strong>日時:</strong> 2026-04-10 14:00</p>
         <p><strong>料金:</strong> 6,000円</p>
 
-        <button
+        <button type="button"
           onClick={handleCheckout}
           disabled={loading}
           style={{

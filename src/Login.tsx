@@ -320,6 +320,7 @@ const Login: React.FC = () => {
             下記リンクより会員登録へお進みください。
           </p>
           <button
+            type="button"
             className="register-button"
             onClick={() => navigate("/register")}
           >

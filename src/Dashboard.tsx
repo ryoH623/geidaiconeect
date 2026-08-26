@@ -34,7 +34,7 @@ export default function Dashboard() {
       ) : (
         <p>ユーザー情報を取得中...</p>
       )}
-      <button onClick={handleLogout} style={{ marginTop: "20px", padding: "10px 20px" }}>
+      <button type="button" onClick={handleLogout} style={{ marginTop: "20px", padding: "10px 20px" }}>
         ログアウト
       </button>
     </div>

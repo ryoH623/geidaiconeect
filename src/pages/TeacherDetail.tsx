@@ -299,7 +299,7 @@ const TeacherDetail: React.FC = () => {
         )}
 
         <div className="reserve-cta-block">
-          <button
+          <button type="button"
             onClick={handleReserveClick}
             className="reserve-button"
             disabled={!canReserve || !selectedCourse}
@@ -318,7 +318,7 @@ const TeacherDetail: React.FC = () => {
         </div>
 
         <div className="review-button-wrapper">
-          <button
+          <button type="button"
             className="review-link-button"
             onClick={() =>
               navigate(

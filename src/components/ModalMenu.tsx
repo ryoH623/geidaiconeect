@@ -17,7 +17,7 @@ export default function ModalMenu({ isOpen, onClose }: Props) {
           <li><Link to="/login">ログイン</Link></li>
           <li><Link to="/contact">お問い合わせ</Link></li>
         </ul>
-        <button onClick={onClose} style={styles.closeButton}>閉じる</button>
+        <button type="button" onClick={onClose} style={styles.closeButton}>閉じる</button>
       </div>
     </div>
   );

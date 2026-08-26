@@ -166,8 +166,8 @@ export default function ReviewList({ teacherId, teacherAuthUid }: Props) {
                     value={editComment}
                     onChange={(e) => setEditComment(e.target.value)}
                   />
-                  <button onClick={() => saveEdit(r.id)}>保存</button>
-                  <button onClick={() => setEditingId(null)}>キャンセル</button>
+                  <button type="button" onClick={() => saveEdit(r.id)}>保存</button>
+                  <button type="button" onClick={() => setEditingId(null)}>キャンセル</button>
                 </>
               ) : (
                 <>
@@ -217,8 +217,8 @@ export default function ReviewList({ teacherId, teacherAuthUid }: Props) {
                   {/* 編集・削除は投稿者本人にのみ表示（Firestore Rules でも本人のみ許可） */}
                   {r.userId && r.userId === auth.currentUser?.uid && (
                     <>
-                      <button onClick={() => startEdit(r)}>編集</button>
-                      <button
+                      <button type="button" onClick={() => startEdit(r)}>編集</button>
+                      <button type="button"
                         onClick={() => deleteReview(r.id)}
                         className="delete-button"
                       >
@@ -229,7 +229,7 @@ export default function ReviewList({ teacherId, teacherAuthUid }: Props) {
                   {/* 返信できるのは担当講師本人のみ（Firestore Rules でも
                       teacherAuthUid が一致する場合の reply 更新だけを許可） */}
                   {canReply(r) && (
-                    <button
+                    <button type="button"
                       onClick={() => {
                         setReplyingId(r.id);
                         setReplyText(r.reply ?? "");
@@ -247,8 +247,8 @@ export default function ReviewList({ teacherId, teacherAuthUid }: Props) {
                         style={{ width: "100%", minHeight: "60px" }}
                       />
                       <br />
-                      <button onClick={() => handleReplySubmit(r.id)}>送信</button>
-                      <button
+                      <button type="button" onClick={() => handleReplySubmit(r.id)}>送信</button>
+                      <button type="button"
                         onClick={() => {
                           setReplyingId(null);
                           setReplyText("");
