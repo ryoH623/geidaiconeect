@@ -3,10 +3,13 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useTeachers } from "../hooks/useTeachers";
-import { getCourses, formatPrice } from "../lib/teacherProfiles";
+import { getCourses } from "../lib/teacherProfiles";
 import type { LessonCourse } from "../lib/teacherProfiles";
 import ReviewList from "../components/ReviewList";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+// アイコンは実体を渡す。文字列名での指定は library.add による登録が前提で、
+// このプロジェクトでは登録していないため描画されない。
+import { faLocationDot } from "@fortawesome/free-solid-svg-icons";
 import { tagIconMap } from "../utils/tagIconMap";
 import { buildReserveUrl } from "../utils/reserveUrl";
 import { useAuth } from "../contexts/AuthContext";
@@ -231,48 +234,55 @@ const TeacherDetail: React.FC = () => {
         {courses.length > 0 && (
           <div className="course-table">
             <h4>レッスンコース</h4>
-            <form>
-              <table>
-                <thead>
-                  <tr>
-                    <th>選択</th>
-                    <th>コース名</th>
-                    <th>料金</th>
-                    <th>備考</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {courses
-                    .filter((course) => !(course.isTrial && trialUsed))
-                    .map((course, i) => (
-                    <tr key={i}>
-                      <td>
-                        <input
-                          type="radio"
-                          name="course"
-                          value={course.title}
-                          checked={selectedCourse?.title === course.title}
-                          onChange={() => setSelectedCourse(course)}
-                        />
-                      </td>
-                      <td>
-                        {course.title}
-                        {course.type === "自宅" && course.locationDisplay && (
-                          <div style={{ fontSize: "0.8rem", color: "#555" }}>
-                            <FontAwesomeIcon
-                              icon="location-dot"
-                              style={{ marginRight: "0.3rem" }}
-                            />
-                            {course.locationDisplay}
-                          </div>
+            {/* 表ではなくカードで並べる。スマホでは表の列幅が足りず、
+                コース名が語の途中で折り返して読みづらかった。 */}
+            <form className="course-list">
+              {courses
+                .filter((course) => !(course.isTrial && trialUsed))
+                .map((course, i) => {
+                  const selected = selectedCourse?.title === course.title;
+                  return (
+                    <label
+                      key={i}
+                      className={`course-card${selected ? " is-selected" : ""}`}
+                    >
+                      <input
+                        type="radio"
+                        name="course"
+                        value={course.title}
+                        checked={selected}
+                        onChange={() => setSelectedCourse(course)}
+                      />
+
+                      <div className="course-card-head">
+                        <span className="course-card-type">{course.type}</span>
+                        {course.isTrial && (
+                          <span className="course-card-type course-card-trial">
+                            体験
+                          </span>
                         )}
-                      </td>
-                      <td>{formatPrice(course.price)}</td>
-                      <td>{course.note || "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+
+                      <p className="course-card-title">{course.title}</p>
+
+                      <div className="course-card-price">
+                        {course.price.toLocaleString()}
+                        <span className="unit">円</span>
+                      </div>
+
+                      {course.locationDisplay && (
+                        <p className="course-card-meta">
+                          <FontAwesomeIcon icon={faLocationDot} />
+                          <span>{course.locationDisplay}</span>
+                        </p>
+                      )}
+
+                      {course.note && (
+                        <p className="course-card-note">{course.note}</p>
+                      )}
+                    </label>
+                  );
+                })}
             </form>
             {/* 出張コースがある場合のみ、どこまで来てもらえるかを示す */}
             {teacher.travelRange && courses.some((c) => c.type === "出張") && (
